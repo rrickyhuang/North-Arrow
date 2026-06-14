@@ -106,10 +106,17 @@ def _bucket_score(minutes: float, buckets: list[dict]) -> float:
 
 
 # ── public API ───────────────────────────────────────────────────────────────
-def estimate(location: str, is_remote: bool, cfg: dict) -> CommuteResult:
+def estimate(location: str, location_normalized: str, is_remote: bool,
+             cfg: dict) -> CommuteResult:
     c = cfg["commute"]
-    if is_remote:
+    if is_remote or location_normalized == "Remote":
         return CommuteResult(score=c["remote_score"], is_remote=True)
+
+    # Out of metro: a SkyTrain commute is meaningless. Score 0 — the scorer
+    # disqualifies "Other" anyway. Never geocode these (avoids phantom rides
+    # like a Calgary address measured to a Vancouver station).
+    if location_normalized == "Other":
+        return CommuteResult(score=0.0)
 
     if not location or not _is_precise(location):
         # City-level only ("Vancouver, BC") -> can't judge commute meaningfully.
@@ -121,6 +128,10 @@ def estimate(location: str, is_remote: bool, cfg: dict) -> CommuteResult:
 
     lat, lng = geo
     station, walk_km = _nearest_station(lat, lng)
+    if walk_km > 10:
+        # Geocoded far from any Expo/Millennium station: either a bad geocode or
+        # genuinely unserved. Don't emit a huge commute — treat as unknown.
+        return CommuteResult(score=c["unknown_location_score"], lat=lat, lng=lng)
     walk_min = (walk_km / c["walk_speed_kmh"]) * 60
     stops = transit_data.STATIONS[station][3]
     ride_min = stops * c["minutes_per_station"]

@@ -25,11 +25,13 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 log = logging.getLogger("scrape")
 
 # Registry of available sources -> their fetch(cfg) callables.
-from scrapers import source_indeed
+from scrapers import source_indeed, source_pibc, source_csla
 
 SOURCES = {
-    "indeed": source_indeed.fetch,
-    # archinect / pibc / csla / idealist / dezeen / firm_direct land in Phase 5-6
+    "pibc": source_pibc.fetch,
+    "csla": source_csla.fetch,
+    "indeed": source_indeed.fetch,   # shelved: Indeed serves 403, handled gracefully
+    # archinect / idealist / firm_direct land in later phases
 }
 
 
@@ -45,7 +47,7 @@ def raw_to_job(raw: dict, cfg: dict) -> Job:
     role_type = classify_role(title, description)
     org_type, org_size = classify_org(company, description)
     loc_norm, is_remote = normalize_location(location, description)
-    com = commute.estimate(location, is_remote, cfg)
+    com = commute.estimate(location, loc_norm, is_remote, cfg)
 
     return Job(
         source=raw["source"],
