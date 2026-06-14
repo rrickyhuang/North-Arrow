@@ -27,9 +27,11 @@ def _commute(j) -> str:
         return "Remote"
     if j.commute_min:
         return f"~{j.commute_min} min from home ({_esc(j.nearest_station)})"
+    # No commute estimate: show the actual place from the posting, not the bucket.
+    place = _esc(j.location) if j.location else _esc(j.location_normalized or "—")
     if j.location_normalized in ("Vancouver", "Hybrid"):
-        return "In metro — no precise estimate (posting gave only a city)"
-    return _esc(j.location_normalized or "—")
+        return f"{place} (metro — no commute estimate, city only)"
+    return place
 
 
 def _salary(j) -> str:

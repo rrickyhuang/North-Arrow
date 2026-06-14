@@ -53,9 +53,10 @@ def _fmt_commute(j) -> str:
         return "remote"
     if j.commute_min:
         return f"~{j.commute_min} min from home (via {j.nearest_station})"
+    place = j.location or j.location_normalized or "n/a"
     if j.location_normalized in ("Vancouver", "Hybrid"):
-        return "in metro — no estimate (posting gave only a city, no address)"
-    return "n/a"
+        return f"{place} (in metro — no estimate, city only)"
+    return place
 
 
 _QUAL_BADGE = {
