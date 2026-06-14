@@ -21,6 +21,7 @@ from pathlib import Path
 
 import config
 import db
+import html_render
 
 log = logging.getLogger("digest")
 
@@ -99,7 +100,7 @@ def write_file(md: str, cfg: dict) -> Path:
     return path
 
 
-def send_email(md: str, n: int, cfg: dict) -> bool:
+def send_email(md: str, html_body: str, n: int, cfg: dict) -> bool:
     addr = config.env("GMAIL_ADDRESS")
     pw = config.env("GMAIL_APP_PASSWORD")
     if not addr or not pw:
@@ -111,7 +112,8 @@ def send_email(md: str, n: int, cfg: dict) -> bool:
     msg["Subject"] = f"JobHunter — {n} match{'es' if n != 1 else ''} ({date.today().isoformat()})"
     msg["From"] = addr
     msg["To"] = to
-    msg.set_content(md)
+    msg.set_content(md)                       # plain-text fallback (markdown)
+    msg.add_alternative(html_body, subtype="html")  # the version Gmail shows
     try:
         ctx = ssl.create_default_context()
         with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ctx) as s:
@@ -138,7 +140,8 @@ def run(cfg: dict, *, write: bool = True, email: bool = True,
         path = write_file(md, cfg)
         log.info("wrote %s", path)
     if email and d.get("send_email", False):
-        if send_email(md, len(primary), cfg):
+        html_body = html_render.digest_html(primary, near, cfg)
+        if send_email(md, html_body, len(primary), cfg):
             db.clear_new_flags(conn)  # only clear once successfully delivered
     conn.close()
     return md

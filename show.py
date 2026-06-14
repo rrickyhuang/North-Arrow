@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sys
 
+import config
 import db
 
 # Windows consoles default to cp1252 and choke on box/bar glyphs. Force UTF-8.
@@ -28,22 +29,33 @@ def _bar(score: float, width: int = 16) -> str:
     return BAR_FULL * n + BAR_EMPTY * (width - n)
 
 
+_LOC_CATEGORY = {
+    "Vancouver": "Vancouver metro",
+    "Remote": "Remote",
+    "Hybrid": "Hybrid",
+    "Other": "Outside metro",
+    "Unknown": "Unknown",
+}
+
+
 def _fmt_salary(j) -> str:
     if j.salary_min and j.salary_max:
-        return f"${j.salary_min // 1000}-{j.salary_max // 1000}k"
+        return f"${j.salary_min // 1000}k-${j.salary_max // 1000}k CAD"
     if j.salary_min:
-        return f"${j.salary_min // 1000}k+"
+        return f"${j.salary_min // 1000}k+ CAD"
     if j.salary_max:
-        return f"<${j.salary_max // 1000}k"
-    return "—"
+        return f"up to ${j.salary_max // 1000}k CAD"
+    return "not stated"
 
 
 def _fmt_commute(j) -> str:
     if j.is_remote:
         return "remote"
     if j.commute_min:
-        return f"{j.commute_min}m·{j.nearest_station}"
-    return j.location_normalized or "—"
+        return f"~{j.commute_min} min from home (via {j.nearest_station})"
+    if j.location_normalized in ("Vancouver", "Hybrid"):
+        return "in metro — no estimate (posting gave only a city, no address)"
+    return "n/a"
 
 
 _QUAL_BADGE = {
@@ -89,9 +101,9 @@ def detail_view(job) -> None:
         print(f"  DISQUALIFIED {job.disqualifier}")
     print(f"  role         {job.role_type}")
     print(f"  org          {job.org_type} ({job.org_size})")
-    print(f"  location     {job.location}  →  {job.location_normalized}")
+    print(f"  location     \"{job.location}\"  →  {_LOC_CATEGORY.get(job.location_normalized, job.location_normalized)}")
     print(f"  commute      {_fmt_commute(job)}")
-    print(f"  salary       {_fmt_salary(job)}  (raw: {job.salary_raw or '—'})")
+    print(f"  salary       {_fmt_salary(job)}")
     print("  " + "─" * 78)
     yrs = f"{job.required_years}+ yrs" if job.required_years else "yrs n/a"
     print(f"  QUALIFICATION  {(job.qualification or '?').upper()}"
@@ -122,8 +134,29 @@ def detail_view(job) -> None:
     print()
 
 
+def html_report() -> None:
+    """Write a full-DB HTML report and open it in the browser."""
+    import webbrowser
+    from pathlib import Path
+    import html_render
+
+    conn = db.connect()
+    db.init_db(conn)
+    cfg = config.load_config()
+    jobs = db.query(conn, include_dismissed=True, order_by="score DESC")
+    out_dir = Path(__file__).with_name(cfg.get("delivery", {}).get("digest_dir", "digests"))
+    out_dir.mkdir(exist_ok=True)
+    path = out_dir / "report.html"
+    path.write_text(html_render.report_html(jobs, cfg), encoding="utf-8")
+    print(f"  wrote {path}")
+    webbrowser.open(path.as_uri())
+
+
 def main() -> None:
     args = sys.argv[1:]
+    if "--html" in args:
+        html_report()
+        return
     show_all = "--all" in args
     min_score = 0.0
     if "--min" in args:
