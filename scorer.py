@@ -96,4 +96,11 @@ def score_job(job: Job, cfg: dict) -> tuple[float, dict, str | None]:
     breakdown["_base"] = round(raw, 4)
     breakdown["_bonus"] = round(bonus, 4)
     total = min(raw + bonus, 1.0)
+
+    # Soft admin-heavy penalty: heavy dock, stays visible (not disqualified).
+    if job.is_admin_heavy:
+        mult = sc.get("penalties", {}).get("admin_heavy", 0.4)
+        total *= mult
+        breakdown["_admin_penalty"] = mult
+
     return round(total, 4), breakdown, None

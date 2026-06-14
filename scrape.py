@@ -176,6 +176,8 @@ def main() -> None:
     ap.add_argument("--all", action="store_true", help="run all enabled sources")
     ap.add_argument("--rescore", action="store_true",
                     help="re-score stored jobs without scraping")
+    ap.add_argument("--digest", action="store_true",
+                    help="build + deliver the digest after scraping")
     args = ap.parse_args()
 
     if args.rescore:
@@ -193,6 +195,10 @@ def main() -> None:
     stats = run(sources, cfg)
     log.info("done: fetched=%(fetched)d new=%(new)d updated=%(updated)d "
              "enriched=%(enriched)d", stats)
+
+    if args.digest:
+        import digest
+        digest.run(cfg)
 
 
 if __name__ == "__main__":
