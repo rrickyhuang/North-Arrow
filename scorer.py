@@ -41,13 +41,10 @@ def score_job(job: Job, cfg: dict) -> tuple[float, dict, str | None]:
     breakdown["commute"] = float(job.score_breakdown.get("commute", 0.5)) \
         if isinstance(job.score_breakdown, dict) else 0.5
 
-    # ── ROLE TYPE ───────────────────────────────────────────────────────────
-    if job.role_type in sc["target_roles"]:
-        breakdown["role_type"] = 1.0
-    elif job.role_type in (None, "unknown"):
-        breakdown["role_type"] = 0.4   # enrichment may still rescue it
-    else:
-        breakdown["role_type"] = 0.1
+    # ── ROLE TYPE (tiered: core design > other design > adjacent) ───────────
+    role_scores = sc.get("role_type_scores", {})
+    default = sc.get("role_type_default", 0.3)
+    breakdown["role_type"] = role_scores.get(job.role_type or "unknown", default)
 
     # ── DESIGN AUTONOMY (enrichment) ────────────────────────────────────────
     breakdown["design_autonomy"] = _tri(job.has_design_autonomy)

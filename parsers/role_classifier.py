@@ -23,6 +23,38 @@ ROLE_SIGNALS: dict[str, list[str]] = {
         "civic innovation", "public engagement", "community design",
         "participatory", "civic tech", "social infrastructure",
     ],
+    "architecture": [
+        "architectural designer", "architectural design", "building design",
+        "intern architect", "job captain", "architect",
+    ],
+    # ── Broader design fields (Ricky is flexible across design) ──
+    "interior_design": [
+        "interior design", "interior designer", "exhibition design",
+        "spatial design", "environmental design", "retail design",
+        "set design", "scenography", "interior architect",
+    ],
+    "graphic_design": [
+        "graphic design", "graphic designer", "visual designer",
+        "visual communication", "communication design", "brand designer",
+        "branding", "wayfinding", "signage design", "editorial design",
+    ],
+    "industrial_design": [
+        "industrial design", "industrial designer", "furniture design",
+        "furniture designer", "product design", "product designer",
+        "fabrication", "prototyping",
+    ],
+    "digital_design": [
+        "ux designer", "ui designer", "ux/ui", "user experience", "web design",
+        "web designer", "motion design", "game design", "digital designer",
+        "interaction design",
+    ],
+    # ── Design-adjacent (moving toward a design direction) ──
+    "design_adjacent": [
+        "design coordinator", "design assistant", "studio assistant",
+        "studio coordinator", "junior designer", "design intern",
+        "creative coordinator", "design research", "design technologist",
+        "design operations", "design ops", "creative assistant",
+    ],
     "admin": [
         "administrative assistant", "office administrator", "receptionist",
         "data entry", "clerical", "executive assistant", "office coordinator",
