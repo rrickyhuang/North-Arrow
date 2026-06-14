@@ -13,7 +13,6 @@ JobHunter's full pipeline is built and working end-to-end (scrape → parse → 
 - [ ] Cover-letter helper, on request per job (output type deferred — alignment talking points vs full draft vs both)
 - [ ] Cross-source deduplication
 - [ ] Scheduler for hands-off daily runs (Windows Task Scheduler)
-- [ ] Push repo to GitHub (`git push -u origin main`) when ready to go private/public
 - [ ] Decide whether Canada Line should count for commute (currently Expo/Millennium only)
 
 ## History
@@ -23,4 +22,6 @@ JobHunter's full pipeline is built and working end-to-end (scrape → parse → 
 - Interviewed and tuned to Ricky's criteria: commute (from Commercial-Broadway) and design-role fit lead; $60k soft floor; no org-type penalty; flexible across all design fields with a public-realm/spatial core; qualification is a separate display-only axis (reach ceiling = intermediate; registration undecided).
 - Confirmed Indeed/LinkedIn are Cloudflare-blocked; investigated and rejected Coroflot, IDIBC, We Work Remotely, Dezeen as broad-design sources for a Vancouver search. PIBC + CSLA are the only viable public boards. Lesson: broad-design coverage must come from firm-direct studios, not public boards.
 - Switched email from raw markdown to HTML (multipart) after the plain-text version rendered poorly in Gmail; added a `show.py --html` full-database browser report; clarified confusing terminal labels (commute/salary/location).
-- Repo prepared for public release: secrets and personal config gitignored with `.example` templates, MIT license, README. Remote added, not yet pushed.
+- Polished the HTML report: client-side search + source/role/qualification filters with a show-disqualified toggle (disqualified hidden by default); out-of-metro jobs now show their real city instead of "Other"; fixed the disqualified pill wrapping mid-title.
+- Set up project docs (ProjectContext.md + Status.md). Repo prepared for public release: secrets and personal config gitignored with `.example` templates, MIT license, README.
+- Pushed to GitHub (github.com/rrickyhuang/JobHunter).

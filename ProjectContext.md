@@ -69,7 +69,7 @@ python digest.py [--no-email|--stdout]
 
 ## Repo
 
-Local git repo; remote `https://github.com/rrickyhuang/JobHunter` (private, **not pushed yet**).
+Git repo pushed to `https://github.com/rrickyhuang/JobHunter`. Secrets (`.env`) and personal config (`config.yaml`) are gitignored; `.example` templates are committed, so the repo is safe to make public.
 
 ## Glossary
 
