@@ -48,6 +48,13 @@ ROLE_SIGNALS: dict[str, list[str]] = {
         "web designer", "motion design", "game design", "digital designer",
         "interaction design",
     ],
+    # ── Design embedded in ops-heavy orgs (logistics/retail/manufacturing) ──
+    "ops_design": [
+        "space planner", "space planning", "workplace strategist",
+        "workplace design", "workplace strategy", "facilities design",
+        "facilities planning", "distribution center design",
+        "corporate real estate design", "warehouse design",
+    ],
     # ── Design-adjacent (moving toward a design direction) ──
     "design_adjacent": [
         "design coordinator", "design assistant", "studio assistant",

@@ -34,12 +34,17 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 log = logging.getLogger("scrape")
 
 # Registry of available sources -> their fetch(cfg) callables.
-from scrapers import source_indeed, source_pibc, source_csla
+from scrapers import (
+    source_indeed, source_pibc, source_csla, source_vancouver,
+    source_municipal_taleo,
+)
 
 SOURCES = {
     "pibc": source_pibc.fetch,
     "csla": source_csla.fetch,
     "indeed": source_indeed.fetch,   # shelved: Indeed serves 403, handled gracefully
+    "vancouver_gov": source_vancouver.fetch,
+    "municipal_taleo": source_municipal_taleo.fetch,
     # archinect / idealist / firm_direct land in later phases
 }
 

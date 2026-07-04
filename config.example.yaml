@@ -112,6 +112,8 @@ sources:
   idealist: true
   dezeen: true
   firm_direct: true
+  vancouver_gov: true      # City of Vancouver job board (SAP SuccessFactors)
+  municipal_taleo: true    # nearby municipalities on the shared Taleo template
 
 # Direct firm careers pages to scrape, e.g.:
 #   - { name: "Some Studio", careers_url: "https://example.com/careers" }

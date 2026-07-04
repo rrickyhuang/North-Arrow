@@ -23,7 +23,7 @@ log = logging.getLogger("enrichment")
 ROLE_TYPES = (
     "urban_design, landscape_arch, planning, civic_innovation, architecture, "
     "interior_design, graphic_design, industrial_design, digital_design, "
-    "design_adjacent, pm_only, admin, drafting_only, unknown"
+    "ops_design, design_adjacent, pm_only, admin, drafting_only, unknown"
 )
 
 _VALID_ROLE = set(r.strip() for r in ROLE_TYPES.split(","))
@@ -75,7 +75,7 @@ Description:
   "is_drafting_only": true/false/null,
   "is_hierarchical": true/false/null,
   "skills_leverage": ["which of the candidate's skills the role uses"],
-  "role_type_guess": "one of: {ROLE_TYPES}",
+  "role_type_guess": "one of: {ROLE_TYPES} (ops_design = in-house design/space-planning role at a logistics, retail, or manufacturing company rather than a design studio)",
   "org_type_guess": "studio_consultancy|municipal_govt|provincial_govt|large_eng_firm|developer|nonprofit_civic|unknown",
   "org_size_guess": "small|mid|large|unknown",
   "seniority": "entry|junior|intermediate|senior|director",
