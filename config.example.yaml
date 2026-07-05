@@ -129,6 +129,13 @@ dedup:
     - pibc
     - csla
     - indeed
+    - linkedin
+
+# ── JobSpy-backed sources (Indeed, LinkedIn) ─────────────────────────────────
+# See scrapers/_jobspy_common.py.
+jobspy:
+  results_wanted: 30
+  hours_old: 168   # 7 days
 
 # ── Enrichment ───────────────────────────────────────────────────────────────
 enrichment:
@@ -146,7 +153,8 @@ delivery:
 
 # ── Sources to run ───────────────────────────────────────────────────────────
 sources:
-  indeed: true
+  indeed: true      # via JobSpy
+  linkedin: true    # via JobSpy
   archinect: true
   pibc: true
   csla: true

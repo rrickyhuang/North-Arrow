@@ -18,9 +18,9 @@ The goal: stop manually sifting 200 postings to find the 4 that actually fit.
 Sources ─▶ Parse/Normalize ─▶ LLM enrich ─▶ Dedup ─▶ Score ─▶ SQLite ─▶ Digest
 ```
 
-- **Sources** — Indeed.ca, Archinect, PIBC, CSLA, Idealist, Dezeen (RSS), and
-  direct firm career pages. (LinkedIn is intentionally excluded — too hostile to
-  scrape reliably.)
+- **Sources** — Indeed.ca and LinkedIn (via [python-jobspy](https://github.com/speedyapply/JobSpy),
+  which handles both without a proxy at this search's volume), Archinect, PIBC,
+  CSLA, Idealist, Dezeen (RSS), and direct firm career pages.
 - **Parse/Normalize** — CAD salary extraction, role-type and org-type
   classification, location normalization, and a free transit-commute estimate
   (geocode via OpenStreetMap Nominatim → nearest station → estimated ride time).

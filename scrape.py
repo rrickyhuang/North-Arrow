@@ -42,7 +42,7 @@ log = logging.getLogger("scrape")
 
 # Registry of available sources -> their fetch(cfg) callables.
 from scrapers import (
-    source_indeed, source_pibc, source_csla, source_vancouver,
+    source_indeed, source_linkedin, source_pibc, source_csla, source_vancouver,
     source_municipal_taleo, source_north_shore, source_port_moody,
     source_coquitlam, source_concrete_cashmere,
 )
@@ -50,7 +50,8 @@ from scrapers import (
 SOURCES = {
     "pibc": source_pibc.fetch,
     "csla": source_csla.fetch,
-    "indeed": source_indeed.fetch,   # shelved: Indeed serves 403, handled gracefully
+    "indeed": source_indeed.fetch,       # via JobSpy — see scrapers/_jobspy_common.py
+    "linkedin": source_linkedin.fetch,   # via JobSpy — see scrapers/_jobspy_common.py
     "vancouver_gov": source_vancouver.fetch,
     "municipal_taleo": source_municipal_taleo.fetch,
     "north_shore": source_north_shore.fetch,
