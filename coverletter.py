@@ -57,9 +57,13 @@ def build_prompt(job, cfg: dict, notes: str = "") -> str:
 
     sample = (profile.get("writing_sample") or "").strip()
     voice_block = (
-        f"\n=== VOICE REFERENCE ===\nHere's a sample of the candidate's own writing. "
-        f"Match its sentence rhythm, vocabulary level, and tone as closely as you can "
-        f"— write like this person, not like a generic AI assistant.\n\n{sample}\n"
+        f"\n=== VOICE REFERENCE (this matters more than any style rule below) ===\n"
+        f"Here is a sample of the candidate's own writing. This is the single most "
+        f"important guide for how the letter should read. Match its sentence rhythm, "
+        f"vocabulary level, warmth, and punctuation habits as closely as you can — "
+        f"including how it opens and how it flows. Write like this person. If any "
+        f"instruction below seems to conflict with sounding like this sample, the "
+        f"sample wins.\n\n{sample}\n"
         if sample else ""
     )
 
@@ -82,17 +86,17 @@ Description:
 - Date of writing: {date.today().strftime("%B %d, %Y")}
 - Recipient / organization: {job.company or "the organization"} — use a named contact only if the posting actually gives one; otherwise address it to "Dear Hiring Committee," or "Dear {job.company} Hiring Team,".
 
-=== LETTER STRUCTURE (four parts, in order) ===
-1. INTRODUCTION — Say why you're writing: who you are in context (not your name — that's in the signature), what you want, and how you came to know about this opening. Name the exact position title.
-2. THE RESEARCH PIECE — Show you know what this organization actually does and why that matters to you. This is where the diagnosis happens: infer WHY they're actually hiring for this role right now — what problem, gap, or pressure the posting implies — rather than just describing the org in general terms.
-3. THE MATCH — Highlight the skills, traits, and expertise that match what they need, pitched as the answer to the problem you identified in part 2 (not a restatement of the posting's bullet points). Back it with evidence — a brief, concrete story from past experience, not just a claim. If notes were supplied above, prioritize weaving those in here.
-4. THE CALL TO ACTION — Express genuine interest in speaking with them further, suggest you'd welcome a follow-up conversation, and close with appreciation for their time.
+=== A ROUGH ARC TO FOLLOW (a guide, not a rigid template — let the voice sample shape how it actually opens and flows) ===
+- Somewhere early, make clear which exact position this is for and, if there's a genuine hook (a personal connection, a sharp read of what they need), lead with that rather than a boilerplate "I am writing to apply" opener.
+- Show you understand what this organization actually does and, where the posting hints at it, why they're hiring for this role right now — the problem or gap behind the opening, not a generic description of the org.
+- Make the case that this candidate answers that need. Back it with a brief, concrete story from real experience, not just a list of claims restated from the posting. If notes were supplied above, prioritize weaving those in here.
+- Close with genuine interest in a conversation and appreciation for their time.
 
 === OTHER INSTRUCTIONS ===
-- Open with a proper salutation and end with a signature line ("Sincerely," + candidate name) — don't skip straight into the body, and don't omit the closing.
-- 3-4 paragraphs, ~300-400 words, professional but not stiff.
-- If there's a qualification gap (e.g. missing registration), don't hide it, but don't dwell on it either — frame it naturally if relevant, most likely within the match paragraph.
-- Avoid telltale AI writing patterns: no em dashes, no "it's not just X, it's Y" constructions, no rule-of-three lists crammed into one sentence, no "In today's world/landscape" openers, no summary-restating closing paragraph. Write plain, direct sentences a real person would actually say.
+- Open with a proper salutation and end with a signature line ("Sincerely," + candidate name) — don't skip the greeting or the closing.
+- Roughly 3-4 paragraphs. Length and paragraphing should feel like the voice sample rather than hitting a fixed word count.
+- If there's a qualification gap (e.g. missing registration), don't hide it, but don't dwell on it either — frame it naturally if relevant.
+- Write like a real, specific person, not a generic AI assistant. The voice sample is your guide for that. Avoid hollow filler openers like "In today's world/landscape" and closings that just restate everything you already said.
 - Output ONLY the letter text (no subject line, no markdown headers, no commentary before/after)."""
 
 

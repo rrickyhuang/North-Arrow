@@ -83,7 +83,7 @@ _QUAL_BADGE = {
 # Fixed column widths so rows line up regardless of terminal/font — deliberately
 # ASCII-only for the flag/tag markers, since glyphs like ★/✗ render at an
 # inconsistent width in the classic Windows console (conhost), breaking alignment.
-_IDX_W, _FLAG_W, _SCORE_W, _BAR_W, _QUAL_W, _STATUS_W, _SRC_W, _TITLE_W = 3, 1, 4, 16, 9, 6, 17, 40
+_IDX_W, _FLAG_W, _SCORE_W, _BAR_W, _QUAL_W, _STATUS_W, _SRC_W, _COMPANY_W, _TITLE_W = 3, 1, 4, 16, 9, 6, 17, 24, 40
 
 _STAGE_CODE = {
     "applied": "AP",
@@ -121,7 +121,7 @@ def list_view(jobs: list, show_all: bool, filters: list[tuple[str, str]] | None 
 
     header = (f"\n  {'#':>{_IDX_W}} {'':<{_FLAG_W}} {'score':<{_SCORE_W}} "
               f"{'fit':<{_BAR_W}} {'qual':<{_QUAL_W}} {'status':<{_STATUS_W}} "
-              f"{'source':<{_SRC_W}} title")
+              f"{'source':<{_SRC_W}} {'company':<{_COMPANY_W}} title")
     print(header)
     print("  " + "-" * (len(header.strip("\n")) - 2))
     for i, j in enumerate(jobs):  # index over full list so `show.py N` is stable
@@ -138,9 +138,11 @@ def list_view(jobs: list, show_all: bool, filters: list[tuple[str, str]] | None 
             tags.append(f"[dup of #{keeper_row}]" if keeper_row is not None else "[duplicate]")
         tag = ("  " + "  ".join(tags)) if tags else ""
         qual = "" if j.disqualifier else _qual(j)
+        company = j.company or ""
         print(f"  {i:>{_IDX_W}} {flag:<{_FLAG_W}} {j.score:.2f} {_bar(j.score)} "
               f"{qual:<{_QUAL_W}} {_status_code(j):<{_STATUS_W}} "
-              f"{j.source[:_SRC_W]:<{_SRC_W}} {j.title[:_TITLE_W]}{tag}")
+              f"{j.source[:_SRC_W]:<{_SRC_W}} {company[:_COMPANY_W]:<{_COMPANY_W}} "
+              f"{j.title[:_TITLE_W]}{tag}")
     print("  " + "-" * (len(header.strip("\n")) - 2))
     print(f"  {len(rows)} shown, {len(live)} scored, {len(auto_dq)} disqualified, "
           f"{len(user_dismissed)} dismissed, {len(duplicates)} duplicates"
