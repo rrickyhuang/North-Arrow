@@ -111,6 +111,10 @@ profile:
     - "Tools you know"
   differentiator: >
     Anything that sets you apart from other candidates.
+  # Optional: paste your full resume text here so enrichment/cover-letter
+  # prompts can ground claims in actual experience, not just the summary above.
+  resume: >
+    (optional — paste your full resume text here)
   # Used only by coverletter.py, to ground tone/voice — not fed into enrichment.
   # Paste 1-2 paragraphs of your own writing (an email, a past cover letter, a
   # bio) so the drafted letter sounds like you instead of generic AI prose.

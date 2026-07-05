@@ -38,7 +38,7 @@ def _profile_block(profile: dict) -> str:
         return "\n".join(f"  - {x}" for x in v) if isinstance(v, list) else f"  {v}".strip()
     parts = []
     for key in ("summary", "experience_level", "credentials", "target_seniority",
-                "wants", "avoids", "design_software", "differentiator"):
+                "wants", "avoids", "design_software", "differentiator", "resume"):
         if key in profile and profile[key]:
             parts.append(f"{key.upper()}:\n{fmt(profile[key])}")
     return "\n".join(parts)
