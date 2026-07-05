@@ -84,6 +84,12 @@ scoring:
     role_type_admin: 0.4          # same, for postings whose primary role_type is "admin"
     role_type_drafting_only: 0.4  # same, for postings whose primary role_type is "drafting_only"
     non_full_time: 0.5            # same, for part_time/casual/on_call/seasonal/temporary postings
+    # Seniority/experience fit vs the candidate (enrichment's qualification verdict).
+    # Without this a senior/director role they can't get outranks an entry-level
+    # one they can. Multiplicative; qualified/overqualified/unknown are NOT docked.
+    qualification:
+      stretch: 0.85               # plausible with a good pitch — mild dock
+      reach:   0.5                # needs years/credentials they lack — heavy dock, stays visible
 
 # ── Hard disqualifiers (force score to 0) ────────────────────────────────────
 # Role-type red flags above are soft penalties, not kills. Out-of-metro AND

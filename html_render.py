@@ -8,6 +8,7 @@ search/filtering (ignored by email clients).
 from __future__ import annotations
 
 import html
+import re
 from datetime import date
 
 _QUAL_COLOR = {
@@ -16,6 +17,57 @@ _QUAL_COLOR = {
     "reach": "#b35900",
     "overqualified": "#6e7781",
 }
+
+# Digest grouping: cards are bucketed by how applyable they are (enrichment's
+# qualification verdict), most-actionable first, so the reader sees "apply now"
+# before "long shots" instead of one flat score sort. Jobs stay score-ordered
+# within each bucket. Anything with no qualification verdict falls to _OTHER.
+QUAL_BUCKETS = [
+    ("Apply now", {"qualified", "overqualified"}),
+    ("Stretch — worth a shot", {"stretch"}),
+    ("Reach — long shots", {"reach"}),
+]
+_OTHER_BUCKET = "Other matches"
+
+# A "top pick" star means apply-now-worthy: Ricky meets the bar AND it scores
+# well — not just a high raw score (which used to star senior/reach roles he
+# can't get).
+_STAR_MIN_SCORE = 0.7
+
+
+def is_top_pick(job) -> bool:
+    return (job.qualification in ("qualified", "overqualified")
+            and job.score >= _STAR_MIN_SCORE)
+
+
+def lead_sentence(text: str) -> tuple[str, str]:
+    """Split prose into (first sentence, remainder) so the digest can lead with
+    the verdict and truncate/tuck the rest. Tiny leading fragments (abbreviations
+    like 'e.g.') are merged forward so we don't cut mid-thought."""
+    text = (text or "").strip()
+    if not text:
+        return "", ""
+    parts = re.split(r"(?<=[.!?])\s+", text)
+    lead, i = parts[0], 1
+    while i < len(parts) and len(lead) < 60:
+        lead += " " + parts[i]
+        i += 1
+    return lead, " ".join(parts[i:]).strip()
+
+
+def group_by_qual(jobs: list) -> list[tuple[str, list]]:
+    """Partition jobs into the QUAL_BUCKETS (order preserved within each), then
+    an Other bucket for unclassified ones. Empty buckets are dropped."""
+    groups = []
+    for label, quals in QUAL_BUCKETS:
+        members = [j for j in jobs if j.qualification in quals]
+        if members:
+            groups.append((label, members))
+    known = {q for _, quals in QUAL_BUCKETS for q in quals}
+    other = [j for j in jobs if j.qualification not in known]
+    if other:
+        groups.append((_OTHER_BUCKET, other))
+    return groups
 
 
 def _esc(s) -> str:
@@ -60,7 +112,7 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
     title = _esc(job.title)
     if rank is not None:
         title = f"{rank}. {title}"
-    star = ' <span style="color:#bf8700;">★</span>' if job.score >= 0.8 else ""
+    star = ' <span style="color:#bf8700;">★</span>' if is_top_pick(job) else ""
     new = (' <span style="background:#1a7f37;color:#fff;font-size:11px;'
            'padding:1px 6px;border-radius:10px;white-space:nowrap;">NEW</span>'
            ) if job.is_new else ""
@@ -78,7 +130,12 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
         yrs = f", ~{job.required_years}+ yrs" if job.required_years else ""
         gaps = ""
         if job.missing_requirements:
-            items = "".join(f"<li>{_esc(g)}</li>" for g in job.missing_requirements[:4])
+            shown = job.missing_requirements if report else job.missing_requirements[:2]
+            items = "".join(f"<li>{_esc(g)}</li>" for g in shown)
+            extra = len(job.missing_requirements) - len(shown)
+            if extra:
+                items += (f'<li style="list-style:none;color:#8b949e;">'
+                          f'+{extra} more gap{"s" if extra != 1 else ""}</li>')
             gaps = (f'<ul style="margin:4px 0 0 0;padding-left:18px;color:#57606a;'
                     f'font-size:13px;">{items}</ul>')
         qual_html = (
@@ -97,8 +154,21 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
 
     fit = ""
     if job.fit_summary:
+        if report:
+            inner = _esc(job.fit_summary)
+        else:
+            # Digest: lead with the verdict sentence, tuck the rest behind a
+            # <details>. Email clients that ignore <details> just show it all
+            # (same as before) — graceful, no lost text.
+            lead, rest = lead_sentence(job.fit_summary)
+            inner = _esc(lead)
+            if rest:
+                inner += (f'<details style="margin-top:4px;"><summary style="cursor:pointer;'
+                          f'color:#0969da;font-size:12px;">more</summary>'
+                          f'<div style="margin-top:4px;color:#57606a;font-size:13px;">'
+                          f'{_esc(rest)}</div></details>')
         fit = (f'<div style="margin-top:8px;color:#24292f;font-size:14px;'
-               f'border-left:3px solid #d0d7de;padding-left:10px;">{_esc(job.fit_summary)}</div>')
+               f'border-left:3px solid #d0d7de;padding-left:10px;">{inner}</div>')
 
     desc = ""
     if full_desc and job.description:
@@ -172,7 +242,13 @@ def digest_html(primary: list, near: list, cfg: dict, row_of: dict[str, int] | N
     intro = f"{n} match{'es' if n != 1 else ''} at or above score {thr}"
     body = ""
     if primary:
-        body += "".join(job_card(j, i, row_no=row_of.get(j.id)) for i, j in enumerate(primary, 1))
+        for label, members in group_by_qual(primary):
+            body += ('<h2 style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;'
+                     'font-size:17px;color:#24292f;margin:24px 0 12px;">'
+                     f'{_esc(label)} <span style="color:#8b949e;font-weight:400;font-size:14px;">'
+                     f'({len(members)})</span></h2>')
+            body += "".join(job_card(j, i, row_no=row_of.get(j.id))
+                            for i, j in enumerate(members, 1))
     else:
         body += ('<div style="color:#57606a;font-family:-apple-system,Segoe UI,Roboto,'
                  'sans-serif;">No postings cleared the bar today.</div>')

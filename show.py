@@ -213,6 +213,8 @@ def detail_view(job, index: int | None = None, full: bool = False) -> None:
         print(f"    {'(admin penalty)':16} x{bd['_admin_penalty']}")
     if "_employment_penalty" in bd:
         print(f"    {'(employment penalty)':21} x{bd['_employment_penalty']}")
+    if "_qualification_penalty" in bd:
+        print(f"    {'(qualification penalty)':21} x{bd['_qualification_penalty']}")
     print("  " + "─" * 78)
     desc = (job.description or "").strip()
     print("  description:\n")

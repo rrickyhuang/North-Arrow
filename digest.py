@@ -49,7 +49,7 @@ def _salary(j) -> str:
 
 def _job_md(j, rank: int, row_no: int | None) -> str:
     new = " 🟢" if j.is_new else ""
-    star = "★ " if j.score >= 0.8 else ""
+    star = "★ " if html_render.is_top_pick(j) else ""
     row = f"#{row_no}" if row_no is not None else "#?"
     lines = [
         f"### {rank}. {star}{j.title} — {j.company or 'Unknown'}{new}",
@@ -60,10 +60,15 @@ def _job_md(j, rank: int, row_no: int | None) -> str:
         yrs = f", ~{j.required_years}+ yrs" if j.required_years else ""
         q = f"**Qualification: {j.qualification}** (posting seniority: {j.seniority or '?'}{yrs})"
         if j.missing_requirements:
-            q += f" — gaps: {'; '.join(j.missing_requirements[:3])}"
+            q += f" — top gap: {j.missing_requirements[0]}"
+            extra = len(j.missing_requirements) - 1
+            if extra:
+                q += f" _(+{extra} more)_"
         lines.append(q)
     if j.fit_summary:
-        lines.append(f"> {j.fit_summary}")
+        # Lead with the verdict sentence only; full text is a `show.py <#>` away.
+        lead, _ = html_render.lead_sentence(j.fit_summary)
+        lines.append(f"> {lead}")
     lines.append(f"[View posting]({j.url})")
     return "\n\n".join(lines)
 
@@ -74,9 +79,11 @@ def build_markdown(primary: list, near: list, cfg: dict, row_of: dict[str, int])
     out = [f"# Job Hunter — Daily Shortlist", f"_{today} · {len(primary)} match"
            f"{'es' if len(primary) != 1 else ''} (score ≥ {thr})_", ""]
     if primary:
-        for i, j in enumerate(primary, 1):
-            out.append(_job_md(j, i, row_of.get(j.id)))
-            out.append("\n---\n")
+        for label, members in html_render.group_by_qual(primary):
+            out.append(f"## {label} ({len(members)})\n")
+            for i, j in enumerate(members, 1):
+                out.append(_job_md(j, i, row_of.get(j.id)))
+                out.append("\n---\n")
     else:
         out.append("_No postings cleared the bar today._\n")
     if near:

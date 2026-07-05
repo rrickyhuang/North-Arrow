@@ -128,4 +128,14 @@ def score_job(job: Job, cfg: dict) -> tuple[float, dict, str | None]:
         total *= mult
         breakdown["_employment_penalty"] = mult
 
+    # Soft seniority/experience penalty: a "reach" director/senior role Ricky
+    # can't get shouldn't outrank an entry-level role he can. The base model
+    # never sees seniority, so fold in enrichment's qualification verdict here.
+    # qualified/overqualified and unknown (None) are not docked.
+    qual_penalties = sc.get("penalties", {}).get("qualification", {})
+    if job.qualification in qual_penalties:
+        mult = qual_penalties[job.qualification]
+        total *= mult
+        breakdown["_qualification_penalty"] = mult
+
     return round(total, 4), breakdown, None
