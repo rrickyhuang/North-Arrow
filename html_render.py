@@ -56,7 +56,7 @@ def _bar(score: float) -> str:
 
 
 def job_card(job, rank: int | None = None, *, full_desc: bool = False,
-             report: bool = False) -> str:
+             report: bool = False, row_no: int | None = None) -> str:
     title = _esc(job.title)
     if rank is not None:
         title = f"{rank}. {title}"
@@ -88,6 +88,11 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
             f'<span style="color:#57606a;">posting seniority: {_esc(job.seniority or "?")}{yrs}</span>'
             f'{gaps}</div>'
         )
+
+    id_row = ""
+    if row_no is not None:
+        id_row = (f'<div style="color:#8b949e;font-size:12px;margin-top:2px;">'
+                  f'<code>id={_esc(job.id)}</code> &nbsp;·&nbsp; show.py #{row_no}</div>')
 
     fit = ""
     if job.fit_summary:
@@ -133,6 +138,7 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
         f'<a href="{_esc(job.url)}" style="color:#0969da;text-decoration:none;">{title}</a>'
         f'{star}{new}</div>'
         f'<div style="color:#57606a;font-size:13px;margin:2px 0 8px;">{_esc(job.company or "Unknown")}</div>'
+        f'{id_row}'
         f'{dq}'
         f'<div style="margin:6px 0;">{_bar(job.score)}</div>'
         f'<div style="color:#57606a;font-size:13px;">{meta}</div>'
@@ -158,20 +164,21 @@ def page(title: str, intro: str, body: str, *, head_extra: str = "") -> str:
     )
 
 
-def digest_html(primary: list, near: list, cfg: dict) -> str:
+def digest_html(primary: list, near: list, cfg: dict, row_of: dict[str, int] | None = None) -> str:
+    row_of = row_of or {}
     thr = cfg["delivery"]["min_score_for_digest"]
     n = len(primary)
     intro = f"{n} match{'es' if n != 1 else ''} at or above score {thr}"
     body = ""
     if primary:
-        body += "".join(job_card(j, i) for i, j in enumerate(primary, 1))
+        body += "".join(job_card(j, i, row_no=row_of.get(j.id)) for i, j in enumerate(primary, 1))
     else:
         body += ('<div style="color:#57606a;font-family:-apple-system,Segoe UI,Roboto,'
                  'sans-serif;">No postings cleared the bar today.</div>')
     if near:
         body += ('<h2 style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;'
                  'font-size:17px;color:#24292f;margin:24px 0 12px;">Near misses (below the bar)</h2>')
-        body += "".join(job_card(j, i) for i, j in enumerate(near, 1))
+        body += "".join(job_card(j, i, row_no=row_of.get(j.id)) for i, j in enumerate(near, 1))
     return page("JobHunter — Daily Shortlist", intro, body)
 
 
