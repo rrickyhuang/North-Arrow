@@ -1,6 +1,8 @@
-"""Cross-source duplicate detection.
+"""Cross-source duplicate detection (library module — no CLI of its own).
 
-    python dedup.py             re-run duplicate detection over the whole DB
+Run it via `python scrape.py --dedup` (re-run over the whole DB without
+scraping); it also runs automatically at the end of every `scrape.py --all`/
+`--source` call. Both just call `run(conn, cfg)` below.
 
 Aggregators (PIBC/CSLA) and an org's own careers board can both list the same
 posting. This groups stored jobs across DIFFERENT sources by fuzzy title +
@@ -8,21 +10,15 @@ company match (guarded by a location or description match too) and marks all
 but one "keeper" per group as `duplicate_of` the keeper's id. Duplicates
 aren't deleted — they're just hidden from `show.py`/the digest by default,
 same treatment as `dismissed`, and `show.py --all` reveals them.
-
-Runs automatically at the end of every `scrape.py --all`/`--source` call, so
-it never needs to be invoked directly except to re-tune thresholds.
 """
 from __future__ import annotations
 
-import logging
 import re
 
 from rapidfuzz import fuzz
 
 import db
 from models import Job
-
-log = logging.getLogger("dedup")
 
 _WS_RE = re.compile(r"[^a-z0-9 ]")
 
@@ -130,18 +126,3 @@ def run(conn, cfg: dict) -> dict:
             db.set_duplicate(conn, j.id, None)
 
     return stats
-
-
-def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    import config
-    conn = db.connect()
-    db.init_db(conn)
-    stats = run(conn, config.load_config())
-    conn.close()
-    log.info("found %(groups)d duplicate group(s), marked %(duplicates)d job(s) "
-              "as duplicates", stats)
-
-
-if __name__ == "__main__":
-    main()

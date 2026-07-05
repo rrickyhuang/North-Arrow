@@ -24,7 +24,7 @@ _SCRIPTS = [
     ("addjob.py", addjob, "Paste in a job you found yourself (LinkedIn/Indeed/etc.), or edit one."),
     ("coverletter.py", coverletter, "Draft a cover letter for any stored job via the claude CLI."),
     ("digest.py", digest, "Build/send the ranked shortlist without re-scraping."),
-    ("dedup.py", dedup, "Cross-source duplicate detection (runs automatically after every scrape)."),
+    ("dedup.py", dedup, "Cross-source duplicate detection (library module; run via `scrape.py --dedup`, auto-runs after every scrape)."),
     ("commute_precise.py", commute_precise, "Optional real transit-time refinement for the digest shortlist (Google Distance Matrix)."),
 ]
 
