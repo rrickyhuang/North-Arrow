@@ -43,7 +43,9 @@ def build_prompt(job, cfg: dict, notes: str = "") -> str:
     if job.autonomy_evidence:
         context_lines.append(f"Design-autonomy evidence in the posting: {job.autonomy_evidence}")
     if job.missing_requirements:
-        context_lines.append(f"Known gaps to navigate carefully (do not lie about these): "
+        context_lines.append(f"Areas where the candidate is light (for your awareness only — "
+                              f"do NOT mention, concede, or apologize for these in the letter; "
+                              f"just don't claim strength the candidate lacks): "
                               f"{'; '.join(job.missing_requirements)}")
     context = "\n".join(context_lines)
 
@@ -95,8 +97,8 @@ Description:
 === OTHER INSTRUCTIONS ===
 - Open with a proper salutation and end with a signature line ("Sincerely," + candidate name) — don't skip the greeting or the closing.
 - Roughly 3-4 paragraphs. Length and paragraphing should feel like the voice sample rather than hitting a fixed word count.
-- If there's a qualification gap (e.g. missing registration), don't hide it, but don't dwell on it either — frame it naturally if relevant.
-- Write like a real, specific person, not a generic AI assistant. The voice sample is your guide for that. Avoid hollow filler openers like "In today's world/landscape" and closings that just restate everything you already said.
+- Do NOT proactively raise, name, or apologize for qualification gaps. Don't tell the reader what the posting is "looking for," and don't concede what the candidate lacks. Spend the space instead making a positive case built on the transferable experience the candidate DOES have — let the relevant strengths stand on their own without being framed against a gap. (Only address a gap directly if the candidate's notes explicitly ask you to.) Never narrate your own honesty about it — no "I want to be upfront/straightforward/honest", no "I'll be candid", no "I know the posting wants X, but...". A confident writer just makes the case; they don't announce a shortfall the reader hadn't raised.
+- Write like a real, specific person, not a generic AI assistant. The voice sample is your guide for that. Avoid these tells: meta-commentary addressed to the reader about your own doubts or honesty; hedges like "more than you might expect" or "you might be wondering"; hollow openers like "In today's world/landscape"; and a closing paragraph that just restates everything already said.
 - Output ONLY the letter text (no subject line, no markdown headers, no commentary before/after)."""
 
 
