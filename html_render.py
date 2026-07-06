@@ -76,8 +76,12 @@ def group_by_qual(jobs: list) -> list[tuple[str, list]]:
 # suggestion. Ordered most-advanced first. Terminal stages (denied/withdrawn)
 # are dropped from the digest entirely — they're closed.
 ACTIVE_STAGES = ("offer", "interviewing", "applied")
-STAGE_LABEL = {"applied": "Applied", "interviewing": "Interviewing", "offer": "Offer"}
-_STAGE_COLOR = {"applied": "#0969da", "interviewing": "#8250df", "offer": "#1a7f37"}
+# Active stages drive the digest tracker; the terminal ones only ever show as a
+# per-card badge in the full report, never in the tracker.
+STAGE_LABEL = {"applied": "Applied", "interviewing": "Interviewing", "offer": "Offer",
+               "denied": "Denied", "withdrawn": "Withdrawn"}
+_STAGE_COLOR = {"applied": "#0969da", "interviewing": "#8250df", "offer": "#1a7f37",
+                "denied": "#cf222e", "withdrawn": "#57606a"}
 
 
 def split_by_stage(jobs: list) -> tuple[list, list]:
@@ -149,6 +153,12 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
     saved = (' <span style="background:#bf8700;color:#fff;font-size:11px;'
              'padding:1px 6px;border-radius:10px;white-space:nowrap;">INTERESTED</span>'
              ) if job.saved and not job.stage else ""
+    stage = ""
+    if job.stage:
+        sc = _STAGE_COLOR.get(job.stage, "#57606a")
+        stage = (f' <span style="background:{sc};color:#fff;font-size:11px;'
+                 f'padding:1px 6px;border-radius:10px;white-space:nowrap;">'
+                 f'{_esc(STAGE_LABEL.get(job.stage, job.stage.title()))}</span>')
 
     meta = " &nbsp;·&nbsp; ".join([
         f"<b>{_esc(job.role_type or '?')}</b>",
@@ -230,6 +240,7 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
         data = (f' class="job-card" data-search="{searchable}" '
                 f'data-source="{_esc(job.source)}" data-role="{_esc(job.role_type or "")}" '
                 f'data-qual="{_esc(job.qualification or "")}" '
+                f'data-stage="{_esc(job.stage or "")}" '
                 f'data-dq="{1 if job.disqualifier else 0}" '
                 f'data-dup="{1 if job.duplicate_of else 0}" data-score="{job.score:.4f}"')
 
@@ -238,7 +249,7 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
         f'margin-bottom:14px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">'
         f'<div style="font-size:16px;font-weight:600;color:#0969da;line-height:1.35;">'
         f'<a href="{_esc(job.url)}" style="color:#0969da;text-decoration:none;">{title}</a>'
-        f'{star}{new}{saved}</div>'
+        f'{star}{new}{saved}{stage}</div>'
         f'<div style="color:#57606a;font-size:13px;margin:2px 0 8px;">{_esc(job.company or "Unknown")}</div>'
         f'{id_row}'
         f'{dq}'
@@ -337,13 +348,15 @@ def _filter_bar(jobs: list) -> str:
     sources = sorted({j.source for j in jobs if j.source})
     roles = sorted({j.role_type for j in jobs if j.role_type})
     quals = sorted({j.qualification for j in jobs if j.qualification})
+    stages = [s for s in (*ACTIVE_STAGES, "denied", "withdrawn")
+              if any(j.stage == s for j in jobs)]
     return (
         '<div style="position:sticky;top:0;background:#f6f8fa;padding:12px 0;z-index:10;'
         'display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-bottom:1px solid #d0d7de;'
         'margin-bottom:16px;font-family:-apple-system,Segoe UI,Roboto,sans-serif;">'
         f'<input id="q" type="search" placeholder="Search title, company, description…" '
         f'oninput="applyFilters()" style="{_INPUT_STYLE}flex:1;min-width:220px;">'
-        f'{opts("source", sources)}{opts("role", roles)}{opts("qual", quals)}'
+        f'{opts("source", sources)}{opts("role", roles)}{opts("qual", quals)}{opts("stage", stages)}'
         '<label style="font-size:13px;color:#57606a;display:flex;align-items:center;gap:4px;">'
         '<input type="checkbox" id="fdq" onchange="applyFilters()"> show disqualified</label>'
         '<label style="font-size:13px;color:#57606a;display:flex;align-items:center;gap:4px;">'
@@ -359,6 +372,7 @@ function applyFilters(){
   var src=document.getElementById('fsource').value;
   var role=document.getElementById('frole').value;
   var qual=document.getElementById('fqual').value;
+  var stage=document.getElementById('fstage').value;
   var showdq=document.getElementById('fdq').checked;
   var showdup=document.getElementById('fdup').checked;
   var n=0;
@@ -368,6 +382,7 @@ function applyFilters(){
     if(src && c.dataset.source!==src) ok=false;
     if(role && c.dataset.role!==role) ok=false;
     if(qual && c.dataset.qual!==qual) ok=false;
+    if(stage && c.dataset.stage!==stage) ok=false;
     if(!showdq && c.dataset.dq==='1') ok=false;
     if(!showdup && c.dataset.dup==='1') ok=false;
     c.style.display = ok ? '' : 'none';
@@ -385,7 +400,7 @@ def report_html(jobs: list, cfg: dict) -> str:
     dup = len([j for j in jobs if j.duplicate_of])
     intro = (f"{len(live)} scored · {dead} disqualified · {dup} duplicates — search and "
              f"filter below; disqualified/duplicates hidden until you toggle them on")
-    cards = "".join(job_card(j, i, full_desc=True, report=True)
+    cards = "".join(job_card(j, i, full_desc=True, report=True, row_no=i)
                     for i, j in enumerate(jobs, 1))
     body = _filter_bar(jobs) + f'<div id="cards">{cards}</div>' + _SCRIPT
     return page("JobHunter — Full Report", intro, body)

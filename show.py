@@ -253,20 +253,30 @@ def apply_filters(jobs: list, filters: list[tuple[str, str, bool]]) -> list:
     return jobs
 
 
-def html_report() -> None:
-    """Write a full-DB HTML report and open it in the browser."""
-    import webbrowser
+def write_html_report(conn, cfg: dict):
+    """Write a full-DB HTML report to disk and return its path. Used both by
+    `show.py --html` (interactive) and scrape.py's unattended daily run, so
+    the browser report doesn't go stale between manual runs."""
     from pathlib import Path
     import html_render
 
-    conn = db.connect()
-    db.init_db(conn)
-    cfg = config.load_config()
     jobs = db.query(conn, include_dismissed=True, include_duplicates=True, order_by="score DESC")
     out_dir = Path(__file__).with_name(cfg.get("delivery", {}).get("digest_dir", "digests"))
     out_dir.mkdir(exist_ok=True)
     path = out_dir / "report.html"
     path.write_text(html_render.report_html(jobs, cfg), encoding="utf-8")
+    return path
+
+
+def html_report() -> None:
+    """Write a full-DB HTML report and open it in the browser."""
+    import webbrowser
+
+    conn = db.connect()
+    db.init_db(conn)
+    cfg = config.load_config()
+    path = write_html_report(conn, cfg)
+    conn.close()
     print(f"  wrote {path}")
     webbrowser.open(path.as_uri())
 

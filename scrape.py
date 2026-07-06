@@ -212,6 +212,17 @@ def reenrich(cfg: dict) -> dict:
     return stats
 
 
+def _refresh_html_report(cfg: dict) -> None:
+    """Regenerate digests/report.html so it never goes stale between manual
+    `show.py --html` runs. Cheap (no network calls), so safe to run after
+    every scrape/rescore/reenrich/dedup."""
+    import show
+    conn = db.connect()
+    path = show.write_html_report(conn, cfg)
+    conn.close()
+    log.info("refreshed HTML report at %s", path)
+
+
 def main() -> None:
     cfg = config.load_config()
     enabled = [s for s, on in cfg.get("sources", {}).items() if on]
@@ -233,12 +244,14 @@ def main() -> None:
     if args.rescore:
         n = rescore(cfg)
         log.info("rescored %d jobs", n)
+        _refresh_html_report(cfg)
         return
 
     if args.reenrich:
         stats = reenrich(cfg)
         log.info("re-enriched %(enriched)d jobs (%(skipped)d skipped, "
                  "disqualified regardless)", stats)
+        _refresh_html_report(cfg)
         return
 
     if args.dedup:
@@ -248,6 +261,7 @@ def main() -> None:
         conn.close()
         log.info("found %(groups)d duplicate group(s), marked %(duplicates)d "
                  "job(s) as duplicates", stats)
+        _refresh_html_report(cfg)
         return
 
     if args.source:
@@ -264,6 +278,8 @@ def main() -> None:
     if args.digest:
         import digest
         digest.run(cfg)
+
+    _refresh_html_report(cfg)
 
 
 if __name__ == "__main__":
