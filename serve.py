@@ -391,7 +391,9 @@ def main() -> None:
     args = ap.parse_args()
     app = create_app()
     print(f"\n  JobHunter cockpit -> http://{args.host}:{args.port}\n")
-    app.run(host=args.host, port=args.port, debug=args.debug)
+    # threaded so a slow request (a ~40s cover-letter draft shelling out to the
+    # claude CLI) doesn't freeze the whole UI for other tabs/actions meanwhile.
+    app.run(host=args.host, port=args.port, debug=args.debug, threaded=True)
 
 
 if __name__ == "__main__":
