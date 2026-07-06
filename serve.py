@@ -18,6 +18,7 @@ import argparse
 import logging
 
 from flask import Flask, abort, request
+from markupsafe import escape
 
 import config
 import coverletter
@@ -34,6 +35,11 @@ _BTN = ("display:inline-block;padding:3px 9px;margin:0 4px 4px 0;border-radius:6
         "border:1px solid #d0d7de;background:#fff;color:#24292f;font-size:12px;"
         "cursor:pointer;font-family:inherit;")
 _BTN_ON = _BTN + "background:#0969da;color:#fff;border-color:#0969da;"
+
+# Shared <head> extras: htmx + the indicator CSS the cover-letter spinner uses.
+_HEAD = ('<script src="https://unpkg.com/htmx.org@1.9.12"></script>'
+         '<style>.htmx-indicator{display:none}'
+         '.htmx-request .htmx-indicator,.htmx-request.htmx-indicator{display:inline}</style>')
 
 
 def _actions_html(job) -> str:
@@ -60,6 +66,17 @@ def _actions_html(job) -> str:
     cl_btn = (f'<button style="{_BTN_ON if has_letter else _BTN}" '
               f'hx-get="/job/{job.id}/coverletter" hx-target="#cl-{job.id}" '
               f'hx-swap="innerHTML">{cl_label}</button>')
+
+    notes_html = (
+        '<div style="margin-top:8px;">'
+        f'<textarea name="notes" rows="2" placeholder="Notes: recruiter, dates, '
+        f'follow-ups, interview prep…" style="{_CL_INPUT}" '
+        f'hx-post="/job/{job.id}/notes" hx-trigger="keyup changed delay:800ms" '
+        f'hx-target="#notes-status-{job.id}" hx-swap="innerHTML">'
+        f'{escape(job.notes or "")}</textarea>'
+        f'<span id="notes-status-{job.id}" style="font-size:11px;color:#57606a;'
+        f'margin-left:6px;"></span></div>'
+    )
     return (
         '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #eaeef2;">'
         f'{stage_btns}{clear}'
@@ -67,6 +84,7 @@ def _actions_html(job) -> str:
         f'{interested}{dismiss}'
         '<span style="display:inline-block;width:12px;"></span>'
         f'{cl_btn}'
+        f'{notes_html}'
         f'<div id="cl-{job.id}"></div></div>'
     )
 
@@ -120,10 +138,87 @@ def _cl_panel(job, error: str = "") -> str:
     return banner + (_cl_view(job, body) if body is not None else _cl_draft_form(job))
 
 
+def _stale_days() -> int:
+    return config.load_config().get("delivery", {}).get(
+        "stale_after_days", html_render.STALE_AFTER_DAYS)
+
+
 def _card(job, row_no: int) -> str:
     return html_render.job_card(
         job, row_no, full_desc=True, report=True, row_no=row_no,
-        dom_id=f"job-{job.id}", actions_html=_actions_html(job))
+        dom_id=f"job-{job.id}", actions_html=_actions_html(job), stale_days=_stale_days())
+
+
+# ── Pipeline board (kanban) ──────────────────────────────────────────────────
+# Columns across the application lifecycle. Each is (key, label, predicate).
+_BOARD_COLUMNS = [
+    ("interested", "Interested", lambda j: bool(j.saved) and not j.stage),
+    ("applied", "Applied", lambda j: j.stage == "applied"),
+    ("interviewing", "Interviewing", lambda j: j.stage == "interviewing"),
+    ("offer", "Offer", lambda j: j.stage == "offer"),
+    ("closed", "Closed", lambda j: j.stage in ("denied", "withdrawn")),
+]
+# Where each card can move to. "interested" = shortlist w/o a stage; "remove"
+# = drop off the board entirely (clear stage + interested).
+_BOARD_MOVES = [
+    ("interested", "★ Interested"), ("applied", "Applied"),
+    ("interviewing", "Interviewing"), ("offer", "Offer"),
+    ("denied", "Denied"), ("withdrawn", "Withdrawn"), ("remove", "Remove"),
+]
+_COL_STYLE = ("flex:1;min-width:230px;background:#f6f8fa;border:1px solid #d0d7de;"
+              "border-radius:10px;padding:10px;margin:0 6px 12px;")
+
+
+def _board_card(job) -> str:
+    since = ""
+    if job.stage_at:
+        since = f' · since {escape(job.stage_at.date().isoformat())}'
+    elif job.stage in ("denied", "withdrawn"):
+        since = f' · {escape(job.stage)}'
+    moves = "".join(
+        f'<button style="{_BTN}padding:2px 6px;font-size:11px;" '
+        f'hx-post="/board/job/{job.id}/move/{key}" hx-target="#board" '
+        f'hx-swap="innerHTML">{label}</button>'
+        for key, label in _BOARD_MOVES if key != job.stage
+    )
+    return (
+        '<div style="background:#fff;border:1px solid #d0d7de;border-radius:8px;'
+        'padding:9px 11px;margin-bottom:9px;">'
+        f'<div style="font-size:14px;font-weight:600;line-height:1.3;">'
+        f'<a href="{escape(job.url)}" style="color:#0969da;text-decoration:none;">'
+        f'{escape(job.title)}</a></div>'
+        f'<div style="color:#57606a;font-size:12px;margin:1px 0 6px;">'
+        f'{escape(job.company or "Unknown")}{since}</div>'
+        f'<div>{moves}</div></div>'
+    )
+
+
+def _board_html(conn) -> str:
+    jobs = db.query(conn, include_dismissed=True, include_duplicates=True,
+                    order_by="score DESC")
+    cols = ""
+    for _key, label, pred in _BOARD_COLUMNS:
+        members = [j for j in jobs if pred(j)]
+        cards = "".join(_board_card(j) for j in members) or (
+            '<div style="color:#8b949e;font-size:12px;padding:6px;">—</div>')
+        cols += (
+            f'<div style="{_COL_STYLE}">'
+            f'<div style="font-weight:600;font-size:13px;color:#24292f;margin-bottom:8px;">'
+            f'{label} <span style="color:#8b949e;font-weight:400;">({len(members)})</span></div>'
+            f'{cards}</div>'
+        )
+    return f'<div style="display:flex;flex-wrap:wrap;align-items:flex-start;">{cols}</div>'
+
+
+def _nav(active: str) -> str:
+    def link(href, label, key):
+        on = key == active
+        style = ("padding:6px 12px;border-radius:6px;text-decoration:none;font-size:14px;"
+                 + ("background:#0969da;color:#fff;" if on else "color:#0969da;"))
+        return f'<a href="{href}" style="{style}">{label}</a>'
+    return ('<div style="margin-bottom:16px;display:flex;gap:8px;'
+            'font-family:-apple-system,Segoe UI,Roboto,sans-serif;">'
+            f'{link("/", "List", "list")}{link("/board", "Pipeline board", "board")}</div>')
 
 
 def create_app(db_path=db.DB_PATH) -> Flask:
@@ -163,14 +258,40 @@ def create_app(db_path=db.DB_PATH) -> Flask:
         intro = (f"{len(live)} scored · {dead} disqualified · {dup} duplicates — "
                  "click a status on any card to update it instantly")
         cards = "".join(_card(j, i) for i, j in enumerate(jobs, 1))
-        body = (html_render._filter_bar(jobs)
+        body = (_nav("list")
+                + html_render._filter_bar(jobs)
                 + f'<div id="cards">{cards}</div>'
                 + html_render._SCRIPT)
         conn.close()
-        head = ('<script src="https://unpkg.com/htmx.org@1.9.12"></script>'
-                '<style>.htmx-indicator{display:none}'
-                '.htmx-request .htmx-indicator,.htmx-request.htmx-indicator{display:inline}</style>')
-        return html_render.page("JobHunter — Cockpit", intro, body, head_extra=head)
+        return html_render.page("JobHunter — Cockpit", intro, body, head_extra=_HEAD)
+
+    @app.route("/board")
+    def board():
+        conn = get_conn()
+        body = _nav("board") + f'<div id="board">{_board_html(conn)}</div>'
+        conn.close()
+        intro = "Your application pipeline — click a button on a card to move it."
+        return html_render.page("JobHunter — Pipeline", intro, body, head_extra=_HEAD)
+
+    @app.route("/board/job/<job_id>/move/<target>", methods=["POST"])
+    def board_move(job_id, target):
+        conn = get_conn()
+        job = _job_or_404(conn, job_id)
+        if target == "interested":
+            db.set_stage(conn, job_id, None)
+            db.set_state(conn, job_id, saved=True)
+        elif target == "remove":
+            db.set_stage(conn, job_id, None)
+            db.set_state(conn, job_id, saved=False)
+        elif target in db.STAGES:
+            db.set_stage(conn, job_id, target)
+        else:
+            conn.close()
+            abort(400)
+        log.info("board move -> %s on %s (%s @ %s)", target, job_id, job.title, job.company)
+        html = _board_html(conn)
+        conn.close()
+        return html
 
     @app.route("/job/<job_id>/stage/<stage>", methods=["POST"])
     def set_stage(job_id, stage):
@@ -210,6 +331,14 @@ def create_app(db_path=db.DB_PATH) -> Flask:
         row_no = _row_no(conn, job_id)
         conn.close()
         return _card(job, row_no)
+
+    @app.route("/job/<job_id>/notes", methods=["POST"])
+    def save_notes(job_id):
+        conn = get_conn()
+        _job_or_404(conn, job_id)
+        db.set_notes(conn, job_id, request.form.get("notes", ""))
+        conn.close()
+        return '<span style="color:#1a7f37;">saved ✓</span>'
 
     @app.route("/job/<job_id>/coverletter")
     def cl_panel(job_id):

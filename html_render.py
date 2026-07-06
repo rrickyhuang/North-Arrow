@@ -9,7 +9,24 @@ from __future__ import annotations
 
 import html
 import re
-from datetime import date
+from datetime import date, datetime, timezone
+
+# A posting is "stale" once its source hasn't listed it for this many days.
+# scraped_at is refreshed on every re-scrape (see db.upsert), so it doubles as a
+# "last seen" timestamp. Overridable via config delivery.stale_after_days.
+STALE_AFTER_DAYS = 30
+
+
+def is_stale(job, days: int = STALE_AFTER_DAYS) -> bool:
+    """True if a posting probably closed: not seen on its source in `days` days
+    AND not something you're actively tracking (no pipeline stage, not marked
+    interested). Those are never stale — you decided to keep them."""
+    if job.stage or job.saved or not job.scraped_at:
+        return False
+    last_seen = job.scraped_at
+    if last_seen.tzinfo is None:
+        last_seen = last_seen.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - last_seen).days > days
 
 _QUAL_COLOR = {
     "qualified": "#1a7f37",
@@ -143,7 +160,8 @@ def _bar(score: float) -> str:
 
 def job_card(job, rank: int | None = None, *, full_desc: bool = False,
              report: bool = False, row_no: int | None = None,
-             dom_id: str | None = None, actions_html: str = "") -> str:
+             dom_id: str | None = None, actions_html: str = "",
+             stale_days: int = STALE_AFTER_DAYS) -> str:
     """Render one job card. `dom_id` sets the outer div's id (so the web UI can
     target it for HTMX swaps) and `actions_html` is appended inside the card
     (the web UI's status controls) — both no-ops for the email/report paths."""
@@ -234,6 +252,11 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
         dq += (f'<div style="margin-top:6px;"><span style="background:#57606a;color:#fff;'
                f'font-size:11px;padding:2px 8px;border-radius:10px;white-space:nowrap;">'
                f'duplicate posting</span></div>')
+    stale = report and is_stale(job, stale_days)
+    if stale:
+        dq += (f'<div style="margin-top:6px;"><span style="background:#9a6700;color:#fff;'
+               f'font-size:11px;padding:2px 8px;border-radius:10px;white-space:nowrap;">'
+               f'stale — not seen in {stale_days}+ days</span></div>')
 
     # data-* attributes + class so the report/web-UI script can filter on them.
     data = ""
@@ -245,7 +268,8 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
                 f'data-qual="{_esc(job.qualification or "")}" '
                 f'data-stage="{_esc(job.stage or "")}" '
                 f'data-dq="{1 if job.disqualifier else 0}" '
-                f'data-dup="{1 if job.duplicate_of else 0}" data-score="{job.score:.4f}"')
+                f'data-dup="{1 if job.duplicate_of else 0}" '
+                f'data-stale="{1 if stale else 0}" data-score="{job.score:.4f}"')
     id_attr = f' id="{_esc(dom_id)}"' if dom_id else ""
 
     return (
@@ -365,6 +389,8 @@ def _filter_bar(jobs: list) -> str:
         '<input type="checkbox" id="fdq" onchange="applyFilters()"> show disqualified</label>'
         '<label style="font-size:13px;color:#57606a;display:flex;align-items:center;gap:4px;">'
         '<input type="checkbox" id="fdup" onchange="applyFilters()"> show duplicates</label>'
+        '<label style="font-size:13px;color:#57606a;display:flex;align-items:center;gap:4px;">'
+        '<input type="checkbox" id="fstale" onchange="applyFilters()"> show stale</label>'
         '<span id="count" style="font-size:13px;color:#57606a;margin-left:auto;"></span>'
         '</div>'
     )
@@ -379,6 +405,7 @@ function applyFilters(){
   var stage=document.getElementById('fstage').value;
   var showdq=document.getElementById('fdq').checked;
   var showdup=document.getElementById('fdup').checked;
+  var showstale=document.getElementById('fstale').checked;
   var n=0;
   document.querySelectorAll('.job-card').forEach(function(c){
     var ok=true;
@@ -389,6 +416,7 @@ function applyFilters(){
     if(stage && c.dataset.stage!==stage) ok=false;
     if(!showdq && c.dataset.dq==='1') ok=false;
     if(!showdup && c.dataset.dup==='1') ok=false;
+    if(!showstale && c.dataset.stale==='1') ok=false;
     c.style.display = ok ? '' : 'none';
     if(ok) n++;
   });
@@ -399,12 +427,15 @@ document.addEventListener('DOMContentLoaded', applyFilters);
 
 
 def report_html(jobs: list, cfg: dict) -> str:
+    stale_days = cfg.get("delivery", {}).get("stale_after_days", STALE_AFTER_DAYS)
     live = [j for j in jobs if not j.disqualifier and not j.duplicate_of]
     dead = len([j for j in jobs if j.disqualifier])
     dup = len([j for j in jobs if j.duplicate_of])
-    intro = (f"{len(live)} scored · {dead} disqualified · {dup} duplicates — search and "
-             f"filter below; disqualified/duplicates hidden until you toggle them on")
-    cards = "".join(job_card(j, i, full_desc=True, report=True, row_no=i)
+    stale = len([j for j in jobs if is_stale(j, stale_days)])
+    intro = (f"{len(live)} scored · {dead} disqualified · {dup} duplicates · {stale} stale "
+             f"— search and filter below; disqualified/duplicates/stale hidden until you "
+             f"toggle them on")
+    cards = "".join(job_card(j, i, full_desc=True, report=True, row_no=i, stale_days=stale_days)
                     for i, j in enumerate(jobs, 1))
     body = _filter_bar(jobs) + f'<div id="cards">{cards}</div>' + _SCRIPT
     return page("JobHunter — Full Report", intro, body)

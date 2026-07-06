@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     dismissed           INTEGER,
     stage               TEXT,
     stage_at            TEXT,
+    notes               TEXT NOT NULL DEFAULT '',
     duplicate_of        TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_score ON jobs(score DESC);
@@ -145,6 +146,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "employment_type": "TEXT",
         "duplicate_of": "TEXT",
         "commute_min_precise": "INTEGER",
+        "notes": "TEXT NOT NULL DEFAULT ''",
     }
     stage_is_new = "stage" not in existing
     for col, typ in added.items():
@@ -211,7 +213,7 @@ def upsert(conn: sqlite3.Connection, job: Job) -> bool:
     # duplicate_of is dedup.py's call, not a re-scrape's — a job's own fields
     # can change on re-scrape without that verdict needing to be recomputed.
     protected = {"id", "seen", "saved", "dismissed", "is_new", "stage", "stage_at",
-                 "duplicate_of", "commute_min_precise"}
+                 "notes", "duplicate_of", "commute_min_precise"}
     updates = {k: v for k, v in data.items() if k not in protected}
     set_clause = ", ".join(f"{k} = :{k}" for k in updates)
     updates["id"] = job.id
@@ -296,6 +298,15 @@ def set_precise_commute(conn: sqlite3.Connection, job_id: str, minutes: int) -> 
     conn.execute(
         "UPDATE jobs SET commute_min_precise = ? WHERE id = ?",
         (minutes, job_id),
+    )
+    conn.commit()
+
+
+def set_notes(conn: sqlite3.Connection, job_id: str, notes: str) -> None:
+    """Save free-text application notes for a job. See models.Job.notes."""
+    conn.execute(
+        "UPDATE jobs SET notes = ? WHERE id = ?",
+        (notes or "", job_id),
     )
     conn.commit()
 

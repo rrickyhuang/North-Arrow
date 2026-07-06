@@ -98,6 +98,9 @@ class Job:
     # offer | denied | withdrawn. See mark.py for the CLI to set these.
     stage: str | None = None
     stage_at: datetime | None = None   # when the current stage was set
+    # Free-text application notes (recruiter, dates, follow-ups, interview prep).
+    # User state — never overwritten on re-scrape. Editable from the web cockpit.
+    notes: str = ""
 
     # ── Cross-source dedup ───────────────────────────────────────────────────
     # Set by dedup.py when this job is judged a re-post of another job (e.g. the

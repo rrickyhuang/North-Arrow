@@ -160,6 +160,10 @@ delivery:
   send_email: true
   min_score_for_digest: 0.45
   max_jobs_in_digest: 25
+  # A posting not seen on its source for this many days is flagged "stale" in the
+  # report and web cockpit (hidden by default, toggleable). Jobs you're tracking
+  # (a pipeline stage or marked interested) are never stale.
+  stale_after_days: 30
 
 # ── Sources to run ───────────────────────────────────────────────────────────
 sources:
