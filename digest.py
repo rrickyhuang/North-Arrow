@@ -30,6 +30,7 @@ import commute_precise
 import config
 import db
 import html_render
+import logutil
 
 log = logging.getLogger("digest")
 
@@ -203,7 +204,7 @@ def run(cfg: dict, *, write: bool = True, email: bool = True,
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    logutil.setup_logging()
     try:
         sys.stdout.reconfigure(encoding="utf-8")
     except (AttributeError, ValueError):

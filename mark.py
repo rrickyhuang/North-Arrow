@@ -23,9 +23,14 @@ use `show.py --all` to see them too.
 """
 from __future__ import annotations
 
+import logging
 import sys
 
 import db
+import logutil
+
+logutil.setup_logging()
+log = logging.getLogger("mark")
 
 _STAGE_STATUSES = set(db.STAGES)
 _BOOL_STATUSES = {
@@ -74,6 +79,8 @@ def main() -> None:
         else:
             db.set_state(conn, job.id, **{_BOOL_STATUSES[status]: not clear})
         print(f"  {verb}: {status} - {job.title} @ {job.company}")
+        log.info("%s %s on %s (%s @ %s)", verb.lower(), status, job.id,
+                 job.title, job.company)
         updated += 1
     conn.close()
     print(f"\n  {updated}/{len(targets)} updated.\n")

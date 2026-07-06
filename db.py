@@ -93,6 +93,40 @@ def connect(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
     return conn
 
 
+def backup_db(db_path: Path | str = DB_PATH, *, keep: int = 14) -> Path | None:
+    """Snapshot the DB to `backups/jobs-YYYYMMDD-HHMMSS.db`, keeping the newest
+    `keep` snapshots. Uses SQLite's online-backup API, so it's safe to run
+    against a live/in-use database. Returns the snapshot path, or None if the
+    source DB doesn't exist yet. Snapshots match `*.db` so they're gitignored.
+
+    This is the durability net for application-tracking data (stages, notes,
+    interested/dismissed flags) that can't be re-scraped — call it after any
+    run that may have changed it."""
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return None
+    backup_dir = db_path.with_name("backups")
+    backup_dir.mkdir(exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    dest = backup_dir / f"{db_path.stem}-{stamp}.db"
+
+    src = sqlite3.connect(str(db_path))
+    try:
+        dst = sqlite3.connect(str(dest))
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+    finally:
+        src.close()
+
+    # Rotate: keep only the newest `keep` snapshots (sorted by name == by time).
+    snapshots = sorted(backup_dir.glob(f"{db_path.stem}-*.db"))
+    for old in snapshots[:-keep]:
+        old.unlink()
+    return dest
+
+
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
     _migrate(conn)

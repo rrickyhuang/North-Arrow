@@ -23,6 +23,7 @@ import requests
 import commute
 import config
 import db
+import logutil
 import transit_data
 from models import Job
 
@@ -122,7 +123,7 @@ def refine_missing(conn, jobs: list[Job], cfg: dict) -> int:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    logutil.setup_logging()
     cfg = config.load_config()
     if not _enabled(cfg):
         log.warning("commute.google_maps.enabled is false or GOOGLE_MAPS_API_KEY "

@@ -8,9 +8,11 @@ Usage:
     python scrape.py --reenrich            force fresh Haiku enrichment on every stored job, then rescore
                                             (costs an API call per job — use after adding an enrichment field)
     python scrape.py --dedup               re-run cross-source duplicate detection only (no scraping)
+    python scrape.py --backup              snapshot jobs.db to backups/ and exit
 
-Every --all/--source scrape re-runs dedup.py at the end automatically, so the
-DB stays clean without a separate step in the normal daily workflow.
+Every --all/--source scrape re-runs dedup.py at the end automatically (so the
+DB stays clean without a separate step) and then snapshots jobs.db to backups/,
+giving application-tracking data (stages/notes) a rolling two-week safety net.
 """
 from __future__ import annotations
 
@@ -23,6 +25,7 @@ import commute
 import scorer
 import enrichment
 import dedup
+import logutil
 from models import Job
 
 _ENRICH_FIELDS = (
@@ -37,7 +40,7 @@ from parsers.employment_classifier import classify_employment_type
 from parsers.org_classifier import classify_org
 from parsers.normalize import normalize_location
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+logutil.setup_logging()
 log = logging.getLogger("scrape")
 
 # Registry of available sources -> their fetch(cfg) callables.
@@ -239,7 +242,14 @@ def main() -> None:
                     help="re-run cross-source duplicate detection only (no scraping)")
     ap.add_argument("--digest", action="store_true",
                     help="build + deliver the digest after scraping")
+    ap.add_argument("--backup", action="store_true",
+                    help="snapshot jobs.db to backups/ and exit (no scraping)")
     args = ap.parse_args()
+
+    if args.backup:
+        dest = db.backup_db()
+        log.info("backed up DB to %s" if dest else "no DB to back up yet", dest)
+        return
 
     if args.rescore:
         n = rescore(cfg)
@@ -280,6 +290,10 @@ def main() -> None:
         digest.run(cfg)
 
     _refresh_html_report(cfg)
+
+    dest = db.backup_db()
+    if dest:
+        log.info("backed up DB to %s", dest)
 
 
 if __name__ == "__main__":
