@@ -8,6 +8,7 @@ profile.yaml
 
 # ── Claude Code local settings (machine-specific) ──
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # ── Local data & generated output ──
 *.db
