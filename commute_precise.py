@@ -2,12 +2,18 @@
 
     python commute_precise.py     refine every digest-shortlist job missing one
 
-Deliberately NOT part of scoring — commute.py's free Nominatim+bucket estimate
-stays the single source of truth for ranking, so ranking never depends on a
-paid API being configured. This only adds a more accurate number *display*
-for jobs that already made the shortlist (see digest.py's `select()`), and
-only pays for routing (mode=transit), not geocoding — both endpoints are
-already known lat/lng from the free pipeline.
+commute.py's free Nominatim+bucket estimate stays the single source of truth
+for the persisted `score` column and for ranking everywhere outside a single
+digest run, so nothing here ever depends on a paid API being configured. For
+most shortlisted jobs this only adds a more accurate number *display*
+alongside the free estimate. The one exception: digest.py's `select()` also
+uses this to re-score jobs whose free-estimate score lands within
+`google_maps.correction_margin` of the digest cutoff, so a coarse bucket
+boundary can't wrongly include/exclude a near-miss job in that day's digest
+(see digest.py's `_correct_score()`) — that correction is in-memory for the
+digest only and is never written back to the DB. Only pays for routing
+(mode=transit), not geocoding — both endpoints are already known lat/lng from
+the free pipeline.
 
 Silently does nothing if `commute.google_maps.enabled` is off in config.yaml
 or `GOOGLE_MAPS_API_KEY` isn't set in `.env` — everything else works fine

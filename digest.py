@@ -22,15 +22,18 @@ import logging
 import smtplib
 import ssl
 import sys
+from dataclasses import replace
 from datetime import date
 from email.message import EmailMessage
 from pathlib import Path
 
+import commute
 import commute_precise
 import config
 import db
 import html_render
 import logutil
+import scorer
 
 log = logging.getLogger("digest")
 
@@ -129,6 +132,17 @@ def row_numbers(conn) -> dict[str, int]:
     return {j.id: i for i, j in enumerate(full)}
 
 
+def _correct_score(job, cfg: dict) -> float:
+    """Recompute job's score using its cached precise commute time (see
+    job.commute_min_precise) in place of the free bucket estimate. In-memory
+    only — never written back to the DB; see commute_precise.py."""
+    breakdown = dict(job.score_breakdown) if isinstance(job.score_breakdown, dict) else {}
+    breakdown["commute"] = commute._bucket_score(
+        job.commute_min_precise, cfg["commute"]["score_buckets"])
+    total, _breakdown, _disq = scorer.score_job(replace(job, score_breakdown=breakdown), cfg)
+    return total
+
+
 def select(conn, cfg: dict, *, refine: bool = True) -> tuple[list, list, list]:
     d = cfg["delivery"]
     thr = d["min_score_for_digest"]
@@ -137,11 +151,30 @@ def select(conn, cfg: dict, *, refine: bool = True) -> tuple[list, list, list]:
     # Jobs already in an active pipeline stage go to the tracker, not the
     # suggestions. `open_jobs` are the ones with no stage set yet.
     open_jobs, tracked = html_render.split_by_stage(ranked)
+
+    if refine:
+        # Jobs whose free-estimate score is close enough to the cutoff that a
+        # coarse commute bucket could plausibly be misjudging them — refine
+        # and re-score those *before* the cut so a real transit time can move
+        # them across the line either way. No-ops (and costs nothing) when
+        # google_maps refinement isn't configured; see commute_precise.py.
+        margin = cfg["commute"].get("google_maps", {}).get("correction_margin", 0.05)
+        borderline = [j for j in open_jobs
+                      if not j.is_remote and thr - margin <= j.score < thr + margin]
+        commute_precise.refine_missing(conn, borderline, cfg)
+        resorted = False
+        for j in borderline:
+            if j.commute_min_precise is not None:
+                j.score = _correct_score(j, cfg)
+                resorted = True
+        if resorted:
+            open_jobs.sort(key=lambda j: j.score, reverse=True)
+
     primary = [j for j in open_jobs if j.score >= thr][:cap]
     near = [j for j in open_jobs if 0 < j.score < thr][:5] if len(primary) < 5 else []
     if refine:
-        # Real transit time only for jobs that actually made the shortlist —
-        # see commute_precise.py for why this never touches scoring.
+        # Real transit time (display only, doesn't affect ranking) for whatever
+        # made the shortlist but wasn't already refined above as borderline.
         commute_precise.refine_missing(conn, primary + near, cfg)
     return primary, near, tracked
 

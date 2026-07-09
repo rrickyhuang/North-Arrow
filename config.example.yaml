@@ -44,11 +44,17 @@ commute:
   remote_score: 0.9
   unknown_location_score: 0.55
   # Optional real-transit-time refinement (Google Distance Matrix, transit
-  # mode) for jobs that reach the digest shortlist only — never affects
-  # scoring. Needs GOOGLE_MAPS_API_KEY in .env; skipped if missing.
+  # mode). Needs GOOGLE_MAPS_API_KEY in .env; skipped if missing. Jobs whose
+  # free-estimate score lands within correction_margin of
+  # delivery.min_score_for_digest get refined and re-scored before the digest
+  # cut, so a coarse bucket boundary can't wrongly include/exclude a
+  # near-miss job — every other shortlisted job just gets a more accurate
+  # number shown (ranking unaffected). No API key = ranking stays exactly the
+  # free/deterministic estimate.
   google_maps:
     enabled: false
     arrival_weekday_hour: 9
+    correction_margin: 0.05
 
 # ── Scoring ──────────────────────────────────────────────────────────────────
 scoring:
