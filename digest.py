@@ -58,15 +58,13 @@ def _salary(j) -> str:
 
 def _job_md(j, rank: int, row_no: int | None) -> str:
     new = " 🟢" if j.is_new else ""
-    star = "★ " if html_render.is_top_pick(j) else ""
+    star = "★ " if html_render.is_starred(j) else ""
     row = f"#{row_no}" if row_no is not None else "#?"
     lines = [
         f"### {rank}. {star}{j.title} — {j.company or 'Unknown'}{new}",
         f"**{j.score:.2f}** · {j.role_type or '?'} · {_commute(j)} · {_salary(j)} · _{j.source}_",
         f"`{j.id}` · {row}",
     ]
-    if j.saved:
-        lines[1] += " · ⭐ interested"
     if j.qualification:
         yrs = f", ~{j.required_years}+ yrs" if j.required_years else ""
         q = f"**Qualification: {j.qualification}** (posting seniority: {j.seniority or '?'}{yrs})"

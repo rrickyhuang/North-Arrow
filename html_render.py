@@ -72,15 +72,10 @@ QUAL_BUCKETS = [
 ]
 _OTHER_BUCKET = "Other matches"
 
-# A "top pick" star means apply-now-worthy: Ricky meets the bar AND it scores
-# well — not just a high raw score (which used to star senior/reach roles he
-# can't get).
-_STAR_MIN_SCORE = 0.7
-
-
-def is_top_pick(job) -> bool:
-    return (job.qualification in ("qualified", "overqualified")
-            and job.score >= _STAR_MIN_SCORE)
+def is_starred(job) -> bool:
+    """Saved/interested, and not yet moved into a pipeline stage (once staged,
+    the stage badge takes over — see job_card)."""
+    return bool(job.saved) and not job.stage
 
 
 def lead_sentence(text: str) -> tuple[str, str]:
@@ -111,6 +106,50 @@ def group_by_qual(jobs: list) -> list[tuple[str, list]]:
     if other:
         groups.append((_OTHER_BUCKET, other))
     return groups
+
+
+def _section_html(label: str, jobs: list, card_fn) -> str:
+    """One heading + its cards, no further grouping. Empty sections render
+    nothing so callers can pass possibly-empty lists unconditionally."""
+    if not jobs:
+        return ""
+    return (
+        f'<h3 style="margin:20px 0 10px;font-size:15px;color:#24292f;'
+        f'border-bottom:1px solid #d0d7de;padding-bottom:6px;">'
+        f'{_esc(label)} <span style="color:#8b949e;font-weight:400;">'
+        f'({len(jobs)})</span></h3>'
+        + "".join(card_fn(j) for j in jobs)
+    )
+
+
+def bucketed_cards_html(jobs: list, card_fn) -> str:
+    """Render `jobs` as cards grouped into the same apply-now/stretch/reach
+    buckets as the email digest (via group_by_qual), each under a heading with
+    a count, so apply-now jobs float above stretch/reach/unclassified ones
+    instead of a flat score sort. `card_fn(job)` renders one card's HTML.
+
+    Mirrors the digest's scope too: only pass it *open* jobs (no stage set,
+    not disqualified/duplicate) — same as `select()` in digest.py restricts
+    `group_by_qual` to `primary`/`near`. Staged jobs get `staged_cards_html`
+    below instead, so an applied-to job never resurfaces as a suggestion, and
+    disqualified/duplicate jobs never inherit a leftover qualification verdict
+    from before they were screened out."""
+    return "".join(
+        _section_html(label, members, card_fn) for label, members in group_by_qual(jobs)
+    )
+
+
+def staged_cards_html(jobs: list, card_fn) -> str:
+    """Render jobs that already have an application stage, grouped like the
+    digest's pipeline tracker: active stages (offer/interviewing/applied) by
+    stage, most-advanced first, then a flat Closed section for denied/
+    withdrawn. Kept separate from `bucketed_cards_html` so in-progress jobs
+    don't get re-mixed into the apply-now/stretch/reach buckets."""
+    tracked = [j for j in jobs if j.stage in ACTIVE_STAGES]
+    closed = [j for j in jobs if j.stage in ("denied", "withdrawn")]
+    parts = [_section_html(label, members, card_fn) for _st, label, members in group_by_stage(tracked)]
+    parts.append(_section_html("Closed", closed, card_fn))
+    return "".join(parts)
 
 
 # Application-pipeline stages that still count as "in progress": shown in a
@@ -194,13 +233,10 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
     title = _esc(job.title)
     if rank is not None:
         title = f"{rank}. {title}"
-    star = ' <span style="color:#bf8700;">★</span>' if is_top_pick(job) else ""
+    star = ' <span style="color:#bf8700;">★</span>' if is_starred(job) else ""
     new = (' <span style="background:#1a7f37;color:#fff;font-size:11px;'
            'padding:1px 6px;border-radius:10px;white-space:nowrap;">NEW</span>'
            ) if job.is_new else ""
-    saved = (' <span style="background:#bf8700;color:#fff;font-size:11px;'
-             'padding:1px 6px;border-radius:10px;white-space:nowrap;">INTERESTED</span>'
-             ) if job.saved and not job.stage else ""
     stage = ""
     if job.stage:
         sc = _STAGE_COLOR.get(job.stage, "#57606a")
@@ -304,7 +340,7 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
         f'margin-bottom:14px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">'
         f'<div style="font-size:16px;font-weight:600;color:#0969da;line-height:1.35;">'
         f'<a href="{_esc(job.url)}" style="color:#0969da;text-decoration:none;">{title}</a>'
-        f'{star}{new}{saved}{stage}</div>'
+        f'{star}{new}{stage}</div>'
         f'<div style="color:#57606a;font-size:13px;margin:2px 0 8px;">{_esc(job.company or "Unknown")}</div>'
         f'{id_row}'
         f'{dq}'
@@ -421,6 +457,8 @@ def _filter_bar(jobs: list) -> str:
         '<input type="checkbox" id="fstale" onchange="applyFilters()"> show stale</label>'
         '<label style="font-size:13px;color:#57606a;display:flex;align-items:center;gap:4px;">'
         '<input type="checkbox" id="fdismissed" onchange="applyFilters()"> show dismissed</label>'
+        '<label style="font-size:13px;color:#57606a;display:flex;align-items:center;gap:4px;">'
+        '<input type="checkbox" id="fstaged" onchange="applyFilters()"> show in pipeline</label>'
         '<span id="count" style="font-size:13px;color:#57606a;margin-left:auto;"></span>'
         '</div>'
     )
@@ -437,6 +475,7 @@ function applyFilters(){
   var showdup=document.getElementById('fdup').checked;
   var showstale=document.getElementById('fstale').checked;
   var showdismissed=document.getElementById('fdismissed').checked;
+  var showstaged=document.getElementById('fstaged').checked;
   var n=0;
   document.querySelectorAll('.job-card').forEach(function(c){
     var ok=true;
@@ -444,13 +483,22 @@ function applyFilters(){
     if(src && c.dataset.source!==src) ok=false;
     if(role && c.dataset.role!==role) ok=false;
     if(qual && c.dataset.qual!==qual) ok=false;
-    if(stage && c.dataset.stage!==stage) ok=false;
+    if(stage){ if(c.dataset.stage!==stage) ok=false; }
+    else if(!showstaged && c.dataset.stage) ok=false;
     if(!showdq && c.dataset.dq==='1') ok=false;
     if(!showdup && c.dataset.dup==='1') ok=false;
     if(!showstale && c.dataset.stale==='1') ok=false;
     if(!showdismissed && c.dataset.dismissed==='1') ok=false;
     c.style.display = ok ? '' : 'none';
     if(ok) n++;
+  });
+  document.querySelectorAll('h3').forEach(function(h){
+    var next=h.nextElementSibling, any=false;
+    while(next && next.tagName!=='H3'){
+      if(next.classList && next.classList.contains('job-card') && next.style.display!=='none'){any=true;break;}
+      next=next.nextElementSibling;
+    }
+    h.style.display = any ? '' : 'none';
   });
   document.getElementById('count').textContent = n+' shown';
 }
@@ -469,9 +517,15 @@ def report_html(jobs: list, cfg: dict) -> str:
     dup = len([j for j in jobs if j.duplicate_of])
     stale = len([j for j in jobs if is_stale(j, stale_days)])
     intro = (f"{len(live)} scored · {dead} disqualified · {dup} duplicates · {stale} stale "
-             f"— search and filter below; disqualified/duplicates/stale/dismissed hidden until you "
-             f"toggle them on")
-    cards = "".join(job_card(j, i, full_desc=True, report=True, row_no=i, stale_days=stale_days)
-                    for i, j in enumerate(jobs, 1))
+             f"— search and filter below; disqualified/duplicates/stale/dismissed/in-pipeline hidden "
+             f"until you toggle them on")
+    row_of = {j.id: i for i, j in enumerate(jobs, 1)}
+    card_fn = lambda j: job_card(
+        j, row_of[j.id], full_desc=True, report=True, row_no=row_of[j.id], stale_days=stale_days)
+    open_jobs, staged = split_by_stage(live)
+    excluded = [j for j in jobs if j.disqualifier or j.duplicate_of]
+    cards = (bucketed_cards_html(open_jobs, card_fn)
+             + staged_cards_html(staged, card_fn)
+             + _section_html("Disqualified & duplicates", excluded, card_fn))
     body = _filter_bar(jobs) + f'<div id="cards">{cards}</div>' + _SCRIPT
     return page("JobHunter — Full Report", intro, body)

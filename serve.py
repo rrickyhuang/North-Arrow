@@ -411,7 +411,17 @@ def create_app(db_path=db.DB_PATH) -> Flask:
         dup = sum(1 for j in jobs if j.duplicate_of)
         intro = (f"{len(live)} scored · {dead} disqualified · {dup} duplicates — "
                  "click a status on any card to update it instantly")
-        cards = "".join(_card(j, i) for i, j in enumerate(jobs, 1))
+        row_of = {j.id: i for i, j in enumerate(jobs, 1)}
+        card_fn = lambda j: _card(j, row_of[j.id])
+        # Same scoping the digest uses: open (unstaged, live) jobs get bucketed
+        # by qualification, staged jobs get their own pipeline section, and
+        # disqualified/duplicate jobs never inherit a leftover qualification
+        # verdict into a bucket they were screened out of.
+        open_jobs, staged = html_render.split_by_stage(live)
+        excluded = [j for j in jobs if j.disqualifier or j.duplicate_of]
+        cards = (html_render.bucketed_cards_html(open_jobs, card_fn)
+                 + html_render.staged_cards_html(staged, card_fn)
+                 + html_render._section_html("Disqualified & duplicates", excluded, card_fn))
         body = (_nav("list")
                 + html_render._filter_bar(jobs)
                 + f'<div id="cards">{cards}</div>'
