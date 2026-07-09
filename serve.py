@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import argparse
 import logging
+import threading
+import time
 
-from flask import Flask, abort, request
+from flask import Flask, abort, make_response, request
 from markupsafe import escape
 
 import config
@@ -27,6 +29,92 @@ import html_render
 import logutil
 
 log = logging.getLogger("serve")
+
+# ── Scrape-on-demand ───────────────────────────────────────────────────────
+# A single background scrape may run at a time, kicked off from the cockpit
+# instead of only via the scheduled `python scrape.py`. The page polls
+# /scrape/status to render the control's current state. Mirrors the sibling
+# apartment-hunter app's web.py.
+_scrape_state = {
+    "running": False,
+    "started_at": None,   # epoch seconds when the current/last scrape began
+    "finished_at": None,
+    "stats": None,         # last run's scrape.run() stats dict
+    "error": None,          # last run's error message, if any
+    "refresh_pending": False,  # consumed once by /scrape/status to fire HX-Refresh
+}
+_scrape_lock = threading.Lock()
+
+
+def _run_scrape_thread(cfg: dict) -> None:
+    """Runs the full scrape.py pipeline (scrape -> score -> dedup -> HTML
+    report -> DB backup) exactly as `python scrape.py` does, just triggered
+    from the web UI instead of the CLI/scheduler."""
+    import scrape
+    try:
+        enabled = [s for s, on in cfg.get("sources", {}).items() if on]
+        sources = [s for s in enabled if s in scrape.SOURCES] or list(scrape.SOURCES.keys())
+        stats = scrape.run(sources, cfg)
+        scrape._refresh_html_report(cfg)
+        db.backup_db()
+        with _scrape_lock:
+            _scrape_state["stats"] = stats
+            _scrape_state["error"] = None
+    except Exception as e:  # noqa: BLE001 — surfaced to the UI, not fatal
+        log.exception("on-demand scrape failed")
+        with _scrape_lock:
+            _scrape_state["error"] = str(e)
+    finally:
+        with _scrape_lock:
+            _scrape_state["running"] = False
+            _scrape_state["finished_at"] = time.time()
+            _scrape_state["refresh_pending"] = True
+
+
+def _trigger_scrape() -> bool:
+    """Start a scrape thread if none is running. Returns True if started."""
+    with _scrape_lock:
+        if _scrape_state["running"]:
+            return False
+        _scrape_state["running"] = True
+        _scrape_state["started_at"] = time.time()
+        _scrape_state["error"] = None
+        _scrape_state["refresh_pending"] = False
+    threading.Thread(target=_run_scrape_thread, args=(config.load_config(),),
+                     daemon=True).start()
+    return True
+
+
+def _scrape_view_state() -> dict:
+    with _scrape_lock:
+        s = dict(_scrape_state)
+    s["elapsed"] = int(time.time() - s["started_at"]) if s["running"] and s["started_at"] else None
+    return s
+
+
+def _scrape_control_html(state: dict) -> str:
+    if state["running"]:
+        elapsed = state["elapsed"] or 0
+        return (
+            f'<span id="scrape-ctl" hx-get="/scrape/status" hx-trigger="every 2s" '
+            f'hx-target="#scrape-ctl" hx-swap="outerHTML" '
+            f'style="font-size:13px;color:#57606a;">'
+            f'⏳ scraping… {elapsed}s (can take several minutes)</span>'
+        )
+    note = ""
+    if state["error"]:
+        note = (f'<span style="color:#cf222e;font-size:12px;margin-left:8px;">'
+                f'last run failed: {escape(state["error"][:200])}</span>')
+    elif state["stats"]:
+        st = state["stats"]
+        note = (f'<span style="color:#1a7f37;font-size:12px;margin-left:8px;">'
+                f'last run: +{st["new"]} new, {st["updated"]} updated, '
+                f'{st["duplicates"]} duplicates</span>')
+    return (
+        f'<span id="scrape-ctl">'
+        f'<button style="{_BTN}" hx-post="/scrape" hx-target="#scrape-ctl" '
+        f'hx-swap="outerHTML">Scrape now</button>{note}</span>'
+    )
 
 # Stage buttons offered on each card, in pipeline order. None == clear/not-applied.
 _STAGE_CHOICES = ("applied", "interviewing", "offer", "denied", "withdrawn")
@@ -280,9 +368,11 @@ def _nav(active: str) -> str:
         style = ("padding:6px 12px;border-radius:6px;text-decoration:none;font-size:14px;"
                  + ("background:#0969da;color:#fff;" if on else "color:#0969da;"))
         return f'<a href="{href}" style="{style}">{label}</a>'
-    return ('<div style="margin-bottom:16px;display:flex;gap:8px;'
+    return ('<div style="margin-bottom:16px;display:flex;gap:8px;align-items:center;'
             'font-family:-apple-system,Segoe UI,Roboto,sans-serif;">'
-            f'{link("/", "List", "list")}{link("/board", "Pipeline board", "board")}</div>')
+            f'{link("/", "List", "list")}{link("/board", "Pipeline board", "board")}'
+            '<span style="margin-left:auto;">'
+            f'{_scrape_control_html(_scrape_view_state())}</span></div>')
 
 
 def create_app(db_path=db.DB_PATH) -> Flask:
@@ -359,6 +449,27 @@ def create_app(db_path=db.DB_PATH) -> Flask:
         html = _board_html(conn)
         conn.close()
         return html
+
+    @app.route("/scrape", methods=["POST"])
+    def scrape_start():
+        """Kick off a background scrape if one isn't already running."""
+        _trigger_scrape()
+        return _scrape_control_html(_scrape_view_state())
+
+    @app.route("/scrape/status")
+    def scrape_status():
+        state = _scrape_view_state()
+        # Consume refresh_pending — fires HX-Refresh exactly once, reloading
+        # the current page (list or board) with the freshly scraped jobs.
+        should_refresh = False
+        with _scrape_lock:
+            if _scrape_state["refresh_pending"]:
+                _scrape_state["refresh_pending"] = False
+                should_refresh = True
+        resp = make_response(_scrape_control_html(state))
+        if should_refresh:
+            resp.headers["HX-Refresh"] = "true"
+        return resp
 
     @app.route("/job/<job_id>/stage/<stage>", methods=["POST"])
     def set_stage(job_id, stage):
