@@ -173,6 +173,10 @@ delivery:
   # report and web cockpit (hidden by default, toggleable). Jobs you're tracking
   # (a pipeline stage or marked interested) are never stale.
   stale_after_days: 30
+  # A job sitting in the "applied" or "interviewing" pipeline stage this many
+  # days with no forward movement gets a follow-up nudge on the cockpit's
+  # pipeline board.
+  follow_up_after_days: 7
 
 # ── Sources to run ───────────────────────────────────────────────────────────
 sources:

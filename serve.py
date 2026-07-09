@@ -180,26 +180,39 @@ _COL_STYLE = ("flex:0 0 264px;background:#f6f8fa;border:1px solid #d0d7de;"
               "border-radius:10px;padding:10px;")
 
 
-def _board_card(job) -> str:
+def _followup_days() -> int:
+    return config.load_config().get("delivery", {}).get(
+        "follow_up_after_days", html_render.FOLLOW_UP_AFTER_DAYS)
+
+
+def _board_card(job, followup_days: int) -> str:
     since = ""
-    if job.stage_at:
-        since = f' · since {escape(job.stage_at.date().isoformat())}'
+    days = html_render.days_in_stage(job)
+    if days is not None:
+        ago = "today" if days == 0 else f"{days}d ago"
+        since = f' · {ago}'
     elif job.stage in ("denied", "withdrawn"):
         since = f' · {escape(job.stage)}'
+    overdue = html_render.is_overdue_followup(job, followup_days)
+    followup = (f'<div style="color:#9a6700;font-size:11px;font-weight:600;'
+                f'margin:2px 0 4px;">⚠ follow up — {days}d with no update</div>'
+                if overdue else "")
     moves = "".join(
         f'<button style="{_BTN}padding:2px 6px;font-size:11px;" '
         f'hx-post="/board/job/{job.id}/move/{key}" hx-target="#board" '
         f'hx-swap="innerHTML">{label}</button>'
         for key, label in _BOARD_MOVES if key != job.stage
     )
+    border = "border:1px solid #d4a72c;" if overdue else "border:1px solid #d0d7de;"
     return (
-        '<div style="background:#fff;border:1px solid #d0d7de;border-radius:8px;'
+        f'<div style="background:#fff;{border}border-radius:8px;'
         'padding:9px 11px;margin-bottom:9px;">'
         f'<div style="font-size:14px;font-weight:600;line-height:1.3;">'
         f'<a href="{escape(job.url)}" style="color:#0969da;text-decoration:none;">'
         f'{escape(job.title)}</a></div>'
         f'<div style="color:#57606a;font-size:12px;margin:1px 0 6px;">'
         f'{escape(job.company or "Unknown")}{since}</div>'
+        f'{followup}'
         f'<div>{moves}</div></div>'
     )
 
@@ -207,15 +220,20 @@ def _board_card(job) -> str:
 def _board_html(conn) -> str:
     jobs = db.query(conn, include_dismissed=True, include_duplicates=True,
                     order_by="score DESC")
+    followup_days = _followup_days()
     cols = ""
     for _key, label, pred in _BOARD_COLUMNS:
         members = [j for j in jobs if pred(j)]
-        cards = "".join(_board_card(j) for j in members) or (
+        overdue_n = sum(1 for j in members if html_render.is_overdue_followup(j, followup_days))
+        overdue_badge = (f' <span style="color:#9a6700;font-weight:600;">⚠{overdue_n}</span>'
+                         if overdue_n else "")
+        cards = "".join(_board_card(j, followup_days) for j in members) or (
             '<div style="color:#8b949e;font-size:12px;padding:6px;">—</div>')
         cols += (
             f'<div style="{_COL_STYLE}">'
             f'<div style="font-weight:600;font-size:13px;color:#24292f;margin-bottom:8px;">'
-            f'{label} <span style="color:#8b949e;font-weight:400;">({len(members)})</span></div>'
+            f'{label} <span style="color:#8b949e;font-weight:400;">({len(members)})</span>'
+            f'{overdue_badge}</div>'
             f'{cards}</div>'
         )
     return (

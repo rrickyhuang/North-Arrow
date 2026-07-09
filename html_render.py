@@ -28,6 +28,32 @@ def is_stale(job, days: int = STALE_AFTER_DAYS) -> bool:
         last_seen = last_seen.replace(tzinfo=timezone.utc)
     return (datetime.now(timezone.utc) - last_seen).days > days
 
+
+# A stage this many days old with no forward movement is worth a nudge to
+# follow up. Overridable via config delivery.follow_up_after_days.
+FOLLOW_UP_AFTER_DAYS = 7
+
+
+def days_in_stage(job) -> int | None:
+    """Days since job.stage_at, or None if there's no stage/timestamp."""
+    if not job.stage_at:
+        return None
+    stage_at = job.stage_at
+    if stage_at.tzinfo is None:
+        stage_at = stage_at.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - stage_at).days
+
+
+def is_overdue_followup(job, days: int = FOLLOW_UP_AFTER_DAYS) -> bool:
+    """True if a job has sat 'applied' or 'interviewing' this many days with
+    no forward movement — a nudge to check in, not a hard rule. Offer/denied/
+    withdrawn/interested are never overdue: nothing to follow up on."""
+    if job.stage not in ("applied", "interviewing"):
+        return False
+    n = days_in_stage(job)
+    return n is not None and n >= days
+
+
 _QUAL_COLOR = {
     "qualified": "#1a7f37",
     "stretch": "#9a6700",
