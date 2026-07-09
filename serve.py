@@ -41,6 +41,25 @@ _HEAD = ('<script src="https://unpkg.com/htmx.org@1.9.12"></script>'
          '<style>.htmx-indicator{display:none}'
          '.htmx-request .htmx-indicator,.htmx-request.htmx-indicator{display:inline}</style>')
 
+# Board-only <head> extras: drag-and-drop to move a card between columns,
+# alongside (not instead of) the per-card move buttons — buttons still cover
+# mobile (no native drag) and the ambiguous Closed column (denied/withdrawn).
+# Global functions defined once in the outer page, not in the HTMX-swapped
+# #board fragment, so they survive every card move.
+_BOARD_HEAD = (
+    '<style>.board-dropok{background:#eef6ff !important;'
+    'outline:2px dashed #54aeff;outline-offset:-2px;}</style>'
+    '<script>'
+    "function boardDragStart(ev,id){ev.dataTransfer.setData('text/plain',id);"
+    "ev.dataTransfer.effectAllowed='move';}"
+    'function boardAllowDrop(ev){ev.preventDefault();}'
+    "function boardDrop(ev,key){ev.preventDefault();"
+    "ev.currentTarget.classList.remove('board-dropok');"
+    "var id=ev.dataTransfer.getData('text/plain');if(!id)return;"
+    "htmx.ajax('POST','/board/job/'+id+'/move/'+key,{target:'#board',swap:'innerHTML'});}"
+    '</script>'
+)
+
 
 def _actions_html(job) -> str:
     """The inline control bar appended inside a card: one button per stage plus
@@ -158,13 +177,16 @@ def _card(job, row_no: int) -> str:
 
 
 # ── Pipeline board (kanban) ──────────────────────────────────────────────────
-# Columns across the application lifecycle. Each is (key, label, predicate).
+# Columns across the application lifecycle: (key, label, predicate, drop_target).
+# drop_target is the /board/job/<id>/move/<target> value a card dropped into
+# this column should move to, or None if the column is ambiguous as a drag
+# target (Closed covers both denied/withdrawn — use the per-card buttons).
 _BOARD_COLUMNS = [
-    ("interested", "Interested", lambda j: bool(j.saved) and not j.stage),
-    ("applied", "Applied", lambda j: j.stage == "applied"),
-    ("interviewing", "Interviewing", lambda j: j.stage == "interviewing"),
-    ("offer", "Offer", lambda j: j.stage == "offer"),
-    ("closed", "Closed", lambda j: j.stage in ("denied", "withdrawn")),
+    ("interested", "Interested", lambda j: bool(j.saved) and not j.stage, "interested"),
+    ("applied", "Applied", lambda j: j.stage == "applied", "applied"),
+    ("interviewing", "Interviewing", lambda j: j.stage == "interviewing", "interviewing"),
+    ("offer", "Offer", lambda j: j.stage == "offer", "offer"),
+    ("closed", "Closed", lambda j: j.stage in ("denied", "withdrawn"), None),
 ]
 # Where each card can move to. "interested" = shortlist w/o a stage; "remove"
 # = drop off the board entirely (clear stage + interested).
@@ -205,7 +227,8 @@ def _board_card(job, followup_days: int) -> str:
     )
     border = "border:1px solid #d4a72c;" if overdue else "border:1px solid #d0d7de;"
     return (
-        f'<div style="background:#fff;{border}border-radius:8px;'
+        f'<div draggable="true" ondragstart="boardDragStart(event, \'{job.id}\')" '
+        f'style="background:#fff;{border}border-radius:8px;cursor:grab;'
         'padding:9px 11px;margin-bottom:9px;">'
         f'<div style="font-size:14px;font-weight:600;line-height:1.3;">'
         f'<a href="{escape(job.url)}" style="color:#0969da;text-decoration:none;">'
@@ -222,15 +245,23 @@ def _board_html(conn) -> str:
                     order_by="score DESC")
     followup_days = _followup_days()
     cols = ""
-    for _key, label, pred in _BOARD_COLUMNS:
+    for _key, label, pred, drop_target in _BOARD_COLUMNS:
         members = [j for j in jobs if pred(j)]
         overdue_n = sum(1 for j in members if html_render.is_overdue_followup(j, followup_days))
         overdue_badge = (f' <span style="color:#9a6700;font-weight:600;">⚠{overdue_n}</span>'
                          if overdue_n else "")
         cards = "".join(_board_card(j, followup_days) for j in members) or (
             '<div style="color:#8b949e;font-size:12px;padding:6px;">—</div>')
+        # Draggable-drop columns get handlers + a data-drop-target attribute
+        # dragenter/leave toggle a highlight on (styled via a class, not the
+        # inline style attribute, so it doesn't clobber it).
+        drop_attrs = (
+            f'ondragover="boardAllowDrop(event)" ondrop="boardDrop(event, \'{drop_target}\')" '
+            f'ondragenter="this.classList.add(\'board-dropok\')" '
+            f'ondragleave="this.classList.remove(\'board-dropok\')"'
+        ) if drop_target else ""
         cols += (
-            f'<div style="{_COL_STYLE}">'
+            f'<div style="{_COL_STYLE}" {drop_attrs}>'
             f'<div style="font-weight:600;font-size:13px;color:#24292f;margin-bottom:8px;">'
             f'{label} <span style="color:#8b949e;font-weight:400;">({len(members)})</span>'
             f'{overdue_badge}</div>'
@@ -303,11 +334,11 @@ def create_app(db_path=db.DB_PATH) -> Flask:
         conn = get_conn()
         body = _nav("board") + f'<div id="board">{_board_html(conn)}</div>'
         conn.close()
-        intro = "Your application pipeline — click a button on a card to move it."
+        intro = "Your application pipeline — drag a card (or click a button) to move it."
         # Wider container so the 5 columns sit side by side on desktop; the board
         # row scrolls horizontally when they don't fit (e.g. on a phone).
         return html_render.page("JobHunter — Pipeline", intro, body,
-                                head_extra=_HEAD, max_width=1400)
+                                head_extra=_HEAD + _BOARD_HEAD, max_width=1400)
 
     @app.route("/board/job/<job_id>/move/<target>", methods=["POST"])
     def board_move(job_id, target):
