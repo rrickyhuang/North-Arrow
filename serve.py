@@ -402,30 +402,29 @@ def create_app(db_path=db.DB_PATH) -> Flask:
 
     @app.route("/")
     def index():
-        cfg = config.load_config()
         conn = get_conn()
         jobs = db.query(conn, include_dismissed=True, include_duplicates=True,
                         order_by="score DESC")
-        live = [j for j in jobs if not j.disqualifier and not j.duplicate_of]
-        dead = sum(1 for j in jobs if j.disqualifier)
-        dup = sum(1 for j in jobs if j.duplicate_of)
-        intro = (f"{len(live)} scored · {dead} disqualified · {dup} duplicates — "
-                 "click a status on any card to update it instantly")
         row_of = {j.id: i for i, j in enumerate(jobs, 1)}
         card_fn = lambda j: _card(j, row_of[j.id])
-        # bucketed_cards_html/staged_cards_html each derive their own subset
-        # from the full list, so passing `jobs` to both (plus the excluded
-        # section below) can't drift out of sync into double-counting or
-        # dropping a job — see their docstrings in html_render.py.
-        excluded = [j for j in jobs if j.disqualifier or j.duplicate_of]
-        cards = (html_render.bucketed_cards_html(jobs, card_fn)
-                 + html_render.staged_cards_html(jobs, card_fn)
-                 + html_render._section_html("Disqualified & duplicates", excluded, card_fn))
-        body = (_nav("list")
-                + html_render._filter_bar(jobs)
+        # One partition drives both the header counts and the rendered cards,
+        # so the two can't disagree. The inbox is a decision queue: it leads
+        # with what still needs a call, hides handled/screened-out jobs behind
+        # "Show everything", and leaves in-progress applications to the board.
+        queue_groups, noise_groups, pipeline = html_render.inbox_partition(
+            jobs, _stale_days())
+        new_count = sum(len(m) for label, m in queue_groups if label == "New to triage")
+        queue_count = sum(len(m) for _label, m in queue_groups)
+        pipeline_count = sum(1 for j in pipeline if j.stage in html_render.ACTIVE_STAGES)
+        controls = html_render.inbox_controls(
+            jobs, new_count=new_count, queue_count=queue_count,
+            pipeline_count=pipeline_count)
+        cards = html_render.inbox_cards_html(queue_groups, noise_groups, card_fn)
+        body = (_nav("list") + controls
                 + f'<div id="cards">{cards}</div>'
-                + html_render._SCRIPT)
+                + html_render.INBOX_SCRIPT)
         conn.close()
+        intro = "Your triage queue — act on a card and it drops out of the list."
         return html_render.page("JobHunter — Cockpit", intro, body, head_extra=_HEAD)
 
     @app.route("/board")

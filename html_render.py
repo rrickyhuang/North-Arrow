@@ -549,3 +549,176 @@ def report_html(jobs: list, cfg: dict) -> str:
              + _section_html("Disqualified & duplicates", excluded, card_fn))
     body = _filter_bar(jobs) + f'<div id="cards">{cards}</div>' + _SCRIPT
     return page("JobHunter — Full Report", intro, body)
+
+
+# ── Cockpit inbox view ───────────────────────────────────────────────────────
+# The live cockpit list is a *decision queue*, not the report's catalog: it
+# leads with what still needs a decision, groups by novelty (new to triage vs.
+# backlog) rather than by qualification, and pushes everything you've already
+# handled or that's been screened out into quiet, collapsible sections. Acting
+# on a card (apply/dismiss/…) drops it out of the queue — see INBOX_SCRIPT.
+#
+# One partition, used for both the counts and the cards, so the header numbers
+# can never disagree with what's rendered below them.
+
+def inbox_partition(jobs: list, stale_days: int = STALE_AFTER_DAYS):
+    """Assign every job to exactly one inbox bucket, most-actionable first.
+
+    Returns (queue_groups, noise_groups, pipeline) where:
+      - queue_groups: [(label, members)] shown by default — Saved, then New to
+        triage, then the Backlog. These are the "still needs a decision" jobs.
+      - noise_groups: [(label, members)] rendered but hidden until "Show
+        everything" — screened out, duplicates, dismissed, likely-closed.
+      - pipeline: jobs already in an application stage. NOT rendered in the
+        list at all (the pipeline board owns them); returned only so the caller
+        can show a count + link.
+
+    Buckets are checked in priority order so each job lands in one place and
+    the groups stay mutually exclusive and exhaustive. A saved job outranks
+    every noise bucket — a job you explicitly flagged is never hidden."""
+    saved, new, backlog = [], [], []
+    screened, dupes, dismissed_, stale_ = [], [], [], []
+    pipeline = []
+    for j in jobs:
+        if j.stage:
+            pipeline.append(j)
+        elif j.saved:
+            saved.append(j)
+        elif j.disqualifier:
+            screened.append(j)
+        elif j.duplicate_of:
+            dupes.append(j)
+        elif j.dismissed:
+            dismissed_.append(j)
+        elif is_stale(j, stale_days):
+            stale_.append(j)
+        elif j.is_new:
+            new.append(j)
+        else:
+            backlog.append(j)
+    queue_groups = [g for g in (
+        ("★ Saved", saved),
+        ("New to triage", new),
+        ("Backlog", backlog),
+    ) if g[1]]
+    noise_groups = [g for g in (
+        ("Screened out", screened),
+        ("Duplicates", dupes),
+        ("Dismissed", dismissed_),
+        ("Likely closed (stale)", stale_),
+    ) if g[1]]
+    return queue_groups, noise_groups, pipeline
+
+
+def _grp_header(label: str, count: int, *, noise: bool) -> str:
+    return (
+        f'<h3 class="grp" data-noise="{0 if not noise else 1}" '
+        f'style="margin:22px 0 10px;font-size:15px;color:#24292f;'
+        f'border-bottom:1px solid #d0d7de;padding-bottom:6px;">'
+        f'{_esc(label)} <span class="grp-n" style="color:#8b949e;font-weight:400;">'
+        f'({count})</span></h3>'
+    )
+
+
+def inbox_cards_html(queue_groups, noise_groups, card_fn) -> str:
+    """Render the queue groups (visible) then the noise groups (hidden by
+    default via INBOX_SCRIPT). Counts in the headers are live — the script
+    rewrites them as cards drain — so the server-rendered number is just the
+    starting value."""
+    parts = []
+    for groups, noise in ((queue_groups, False), (noise_groups, True)):
+        for label, members in groups:
+            parts.append(_grp_header(label, len(members), noise=noise))
+            parts.append("".join(card_fn(j) for j in members))
+    return "".join(parts)
+
+
+def inbox_controls(jobs: list, *, new_count: int, queue_count: int,
+                   pipeline_count: int, board_href: str = "/board") -> str:
+    """The status line ('X new · Y awaiting decision · Z in your pipeline →')
+    plus a lean filter bar: search, a 'Fit' allow-list of qualification chips,
+    a source dropdown, and a single 'Show everything' escape hatch that reveals
+    the noise sections. Deliberately fewer knobs than the report's filter bar —
+    the queue's whole point is that the useful default needs no fiddling."""
+    sources = sorted({j.source for j in jobs if j.source})
+    src_opts = "".join(f'<option value="{_esc(s)}">{_esc(s)}</option>' for s in sources)
+    # Qualification allow-list chips: none selected = no filter (show all fits);
+    # selecting some narrows to just those. Order = most- to least-applyable.
+    chip_style = ("padding:3px 10px;border-radius:12px;border:1px solid #d0d7de;"
+                  "background:#fff;font-size:12px;cursor:pointer;font-family:inherit;"
+                  "color:#24292f;opacity:0.55;")
+    chips = "".join(
+        f'<button type="button" class="qchip" data-qual="{q}" data-on="0" '
+        f'onclick="qchipToggle(this)" style="{chip_style}">{label}</button>'
+        for q, label in (("qualified", "Qualified"), ("overqualified", "Overqualified"),
+                         ("stretch", "Stretch"), ("reach", "Reach"))
+    )
+    status = (
+        '<div style="font-size:14px;color:#24292f;margin-bottom:10px;'
+        'font-family:-apple-system,Segoe UI,Roboto,sans-serif;">'
+        f'<b>{new_count}</b> new · <b id="queue-count">{queue_count}</b> awaiting decision · '
+        f'<a href="{board_href}" style="color:#0969da;text-decoration:none;">'
+        f'{pipeline_count} in your pipeline &rarr;</a></div>'
+    )
+    bar = (
+        '<div style="position:sticky;top:0;background:#f6f8fa;padding:12px 0;z-index:10;'
+        'display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-bottom:1px solid #d0d7de;'
+        'margin-bottom:8px;font-family:-apple-system,Segoe UI,Roboto,sans-serif;">'
+        f'<input id="q" type="search" placeholder="Search title, company, description…" '
+        f'oninput="inboxFilter()" style="{_INPUT_STYLE}flex:1;min-width:200px;">'
+        f'<span style="font-size:12px;color:#57606a;">Fit:</span>{chips}'
+        f'<select id="fsource" onchange="inboxFilter()" style="{_INPUT_STYLE}">'
+        f'<option value="">source: all</option>{src_opts}</select>'
+        '<label style="font-size:13px;color:#57606a;display:flex;align-items:center;gap:4px;">'
+        '<input type="checkbox" id="fall" onchange="inboxFilter()"> Show everything</label>'
+        '</div>'
+    )
+    return status + bar
+
+
+INBOX_SCRIPT = """<script>
+function qchipToggle(el){
+  el.dataset.on = el.dataset.on==='1' ? '0' : '1';
+  el.style.opacity = el.dataset.on==='1' ? '1' : '0.55';
+  el.style.background = el.dataset.on==='1' ? '#ddf4ff' : '#fff';
+  el.style.borderColor = el.dataset.on==='1' ? '#54aeff' : '#d0d7de';
+  inboxFilter();
+}
+function inboxFilter(){
+  var q=(document.getElementById('q').value||'').toLowerCase().trim();
+  var src=document.getElementById('fsource').value;
+  var showAll=document.getElementById('fall').checked;
+  var quals=[];
+  document.querySelectorAll('.qchip[data-on="1"]').forEach(function(c){quals.push(c.dataset.qual);});
+  document.querySelectorAll('.job-card').forEach(function(c){
+    var ok=true;
+    // A staged job belongs to the pipeline board, never the queue — so a card
+    // that just became staged via an action hides itself (the "drain").
+    if(c.dataset.stage) ok=false;
+    if(q && c.dataset.search.indexOf(q)<0) ok=false;
+    if(src && c.dataset.source!==src) ok=false;
+    if(quals.length && quals.indexOf(c.dataset.qual)<0) ok=false;
+    if(!showAll && (c.dataset.dq==='1'||c.dataset.dup==='1'||
+                    c.dataset.dismissed==='1'||c.dataset.stale==='1')) ok=false;
+    c.style.display = ok ? '' : 'none';
+  });
+  // Live-update each group's header count from what's actually visible, hide
+  // emptied groups, and keep the 'awaiting decision' total honest as cards drain.
+  var queueN=0;
+  document.querySelectorAll('h3.grp').forEach(function(h){
+    var n=0, next=h.nextElementSibling;
+    while(next && !(next.tagName==='H3' && next.classList.contains('grp'))){
+      if(next.classList && next.classList.contains('job-card') && next.style.display!=='none') n++;
+      next=next.nextElementSibling;
+    }
+    var span=h.querySelector('.grp-n'); if(span) span.textContent='('+n+')';
+    h.style.display = n ? '' : 'none';
+    if(h.dataset.noise==='0') queueN+=n;
+  });
+  var qc=document.getElementById('queue-count'); if(qc) qc.textContent=queueN;
+}
+document.addEventListener('DOMContentLoaded', inboxFilter);
+// Cards swapped in via HTMX (apply/dismiss/interested/…) start visible and
+// ignore the active filters — re-run once HTMX settles so the queue drains.
+document.addEventListener('htmx:afterSettle', inboxFilter);
+</script>"""
