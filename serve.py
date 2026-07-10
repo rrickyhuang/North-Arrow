@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import secrets
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -422,6 +423,25 @@ def create_app(db_path=db.DB_PATH) -> Flask:
     db.init_db(conn0)
     conn0.close()
 
+    # Per-process shared secret, handed to the browser via a <script> tag and
+    # echoed back by htmx on every mutating request (see _CSRF_HEAD below).
+    # Blocks drive-by CSRF from another tab/page: cross-origin fetches that set
+    # a custom header trigger a CORS preflight, which we don't answer, so the
+    # browser refuses to send it. Not real auth — anything with local script
+    # execution on this page can already read the token — but that's outside
+    # this threat model (single-user, localhost-only cockpit).
+    csrf_token = secrets.token_urlsafe(24)
+    csrf_head = (
+        '<script>document.addEventListener("htmx:configRequest",'
+        f'function(e){{e.detail.headers["X-CSRF-Token"]="{csrf_token}";}});</script>'
+    )
+
+    @app.before_request
+    def _check_csrf():
+        if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            if request.headers.get("X-CSRF-Token") != csrf_token:
+                abort(403)
+
     def get_conn():
         return db.connect(db_path)
 
@@ -469,7 +489,7 @@ def create_app(db_path=db.DB_PATH) -> Flask:
         conn.close()
         intro = "Your triage queue — act on a card and it drops out of the list."
         resp = make_response(
-            html_render.page("North Arrow — Cockpit", intro, body, head_extra=_HEAD))
+            html_render.page("North Arrow — Cockpit", intro, body, head_extra=_HEAD + csrf_head))
         resp.set_cookie(_SEEN_COOKIE, seen_cookie, max_age=60 * 60 * 24 * 365,
                         samesite="Lax")
         return resp
@@ -483,7 +503,7 @@ def create_app(db_path=db.DB_PATH) -> Flask:
         # Wider container so the 5 columns sit side by side on desktop; the board
         # row scrolls horizontally when they don't fit (e.g. on a phone).
         return html_render.page("North Arrow — Pipeline", intro, body,
-                                head_extra=_HEAD + _BOARD_HEAD, max_width=1400)
+                                head_extra=_HEAD + csrf_head + _BOARD_HEAD, max_width=1400)
 
     @app.route("/board/job/<job_id>/move/<target>", methods=["POST"])
     def board_move(job_id, target):
