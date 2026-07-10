@@ -24,10 +24,27 @@ import db
 from models import Job
 
 _WS_RE = re.compile(r"[^a-z0-9 ]")
+# Job Bank descriptions are prefixed with page-loading/navigation chrome
+# ("64100 25 Loading, please wait... Cancel ... Employer details ... Save to
+# favourites ... Job details") that's near-identical across every posting.
+# Left in, it inflates description similarity between unrelated jobs; strip
+# everything up to and including the literal "Job details" marker.
+_JOBBANK_CHROME_RE = re.compile(r".*?\bjob details\b", re.IGNORECASE | re.DOTALL)
+# Below this length a description is either just this chrome with nothing
+# real left after stripping, or (for some Job Bank listings) a stub that's
+# nothing but "{title} - {company} - {location}" restated — no independent
+# signal, so it shouldn't be trusted to confirm a match on its own.
+_MIN_MEANINGFUL_DESC_LEN = 200
 
 
 def _normalize(s: str | None) -> str:
     return _WS_RE.sub(" ", (s or "").lower()).strip()
+
+
+def _clean_description(desc: str | None) -> str:
+    text = (desc or "").strip()
+    stripped = _JOBBANK_CHROME_RE.sub("", text, count=1).strip()
+    return stripped if stripped else text
 
 
 def _same_group(a: Job, b: Job, cfg: dict) -> bool:
@@ -46,19 +63,25 @@ def _same_group(a: Job, b: Job, cfg: dict) -> bool:
     if fuzz.token_sort_ratio(_normalize(a.title), _normalize(b.title)) < title_thr:
         return False
 
-    desc_ratio = fuzz.token_set_ratio((a.description or "")[:500], (b.description or "")[:500])
+    a_desc, b_desc = _clean_description(a.description), _clean_description(b.description)
+    desc_meaningful = (
+        len(a_desc) >= _MIN_MEANINGFUL_DESC_LEN and len(b_desc) >= _MIN_MEANINGFUL_DESC_LEN
+    )
+    desc_strong = desc_meaningful and (
+        fuzz.token_set_ratio(a_desc[:500], b_desc[:500]) >= desc_thr
+    )
 
     a_co, b_co = _normalize(a.company), _normalize(b.company)
     if a_co and b_co:
         company_match = fuzz.token_sort_ratio(a_co, b_co) >= company_thr
     else:
         company_match = a_co == b_co  # both blank counts as a match
-    if not company_match and desc_ratio < desc_thr:
+    if not company_match and not desc_strong:
         return False
 
     if a.location_normalized and a.location_normalized == b.location_normalized:
         return True
-    return desc_ratio >= desc_thr
+    return desc_strong
 
 
 def find_groups(jobs: list[Job], cfg: dict) -> list[list[Job]]:

@@ -394,8 +394,8 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
     id_attr = f' id="{_esc(dom_id)}"' if dom_id else ""
 
     return (
-        f'<div{id_attr}{data} style="border:1px solid {GRID};border-radius:10px;padding:14px 16px;'
-        f'margin-bottom:14px;font-family:{FONT_SANS};">'
+        f'<div{id_attr}{data} style="background:{PAPER_RAISED};border:1px solid {GRID};'
+        f'border-radius:10px;padding:14px 16px;margin-bottom:14px;font-family:{FONT_SANS};">'
         f'<div style="font-size:16px;font-weight:600;color:{BLUEPRINT_BRIGHT};line-height:1.35;">'
         f'<a href="{_esc(job.url)}" target="_blank" rel="noopener" style="color:{BLUEPRINT_BRIGHT};text-decoration:none;">{title}</a>'
         f'{star}{new}{stage}</div>'
@@ -423,29 +423,36 @@ def _mark_svg(size: int = 34) -> str:
 
 
 def _contour_backdrop(canvas_id: str) -> str:
-    """A procedural, sine-perturbed contour-line backdrop for the masthead —
-    same technique as the identity mockup, but masked with a bottom fade so
-    the lines dissolve into the page instead of cutting off at a hard edge
-    the way the mockup's did."""
+    """A procedural, sine-perturbed contour-line backdrop, bounded to and
+    scrolling naturally with its parent card (plain position:absolute, not
+    fixed — a fixed/viewport-spanning version stayed put while the page
+    scrolled under it, which read as a floating overlay rather than part of
+    the page). Masked with a fade on all sides so the lines dissolve into
+    the card instead of cutting off at a hard edge."""
     return (
-        f'<canvas id="{canvas_id}" width="1040" height="200" aria-hidden="true" style="'
-        f'position:absolute;inset:-18px -20px auto -20px;height:210px;'
-        f'width:calc(100% + 40px);z-index:0;pointer-events:none;'
-        f'-webkit-mask-image:linear-gradient(to bottom,#000 0%,#000 45%,transparent 100%);'
-        f'mask-image:linear-gradient(to bottom,#000 0%,#000 45%,transparent 100%);"></canvas>'
+        f'<canvas id="{canvas_id}" aria-hidden="true" style="'
+        f'position:absolute;inset:0;width:100%;height:100%;z-index:0;'
+        f'pointer-events:none;'
+        f'-webkit-mask-image:radial-gradient(ellipse at center,#000 40%,transparent 85%);'
+        f'mask-image:radial-gradient(ellipse at center,#000 40%,transparent 85%);"></canvas>'
         f'<script>(function(){{'
         f'var c=document.getElementById("{canvas_id}");if(!c)return;'
-        f'var ctx=c.getContext("2d"),w=c.width,h=c.height,ink="{BLUEPRINT}";'
-        f'function ring(cx,cy,r,j,fa,fb,ph){{ctx.beginPath();var n=120;'
+        f'var ctx=c.getContext("2d"),ink="{BLUEPRINT}";'
+        f'function ring(cx,cy,r,j,fa,fb,ph){{ctx.beginPath();var n=110;'
         f'for(var i=0;i<=n;i++){{var t=(i/n)*Math.PI*2;'
         f'var rr=r+Math.sin(t*fa+ph)*j+Math.sin(t*fb+ph*1.7)*(j*0.5);'
         f'var x=cx+Math.cos(t)*rr,y=cy+Math.sin(t)*rr*0.6;'
         f'if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}}ctx.closePath();ctx.stroke();}}'
         f'function ridge(cx,cy,n,sp,a){{for(var i=0;i<n;i++){{'
         f'ctx.globalAlpha=Math.max(0,a-i*(a/n));ctx.lineWidth=1;ctx.strokeStyle=ink;'
-        f'ring(cx,cy,28+i*sp,9+i*1.3,3,5,i*0.35);}}}}'
-        f'ridge(w*0.16,h*0.8,10,24,0.4);ridge(w*0.6,h*1.0,12,22,0.34);'
-        f'ridge(w*0.92,h*0.55,8,18,0.28);ctx.globalAlpha=1;'
+        f'ring(cx,cy,20+i*sp,7+i*1.1,3,5,i*0.35);}}}}'
+        f'function draw(){{'
+        f'var r=c.getBoundingClientRect(),w=c.width=r.width,h=c.height=r.height;'
+        f'ctx.clearRect(0,0,w,h);'
+        f'ridge(w*0.2,h*0.35,10,20,0.5);'
+        f'ridge(w*0.7,h*0.6,9,18,0.4);'
+        f'ctx.globalAlpha=1;}}'
+        f'draw();window.addEventListener("resize",draw);'
         f'}})();</script>'
     )
 
@@ -480,11 +487,12 @@ def page(title: str, intro: str, body: str, *, head_extra: str = "",
         for v, h in (("top", "left"), ("top", "right"), ("bottom", "left"), ("bottom", "right"))
     ) if chrome else ""
     heading = (
-        f'<div style="position:relative;margin-bottom:6px;">'
+        f'<div style="position:relative;overflow:hidden;border-radius:10px;'
+        f'border:1px solid {GRID};background:{PAPER_RAISED};margin-bottom:6px;">'
         f'{_contour_backdrop("naContours")}'
         f'<div style="position:relative;z-index:1;display:flex;justify-content:space-between;'
         f'align-items:flex-end;gap:16px;flex-wrap:wrap;border-bottom:1.5px solid {BLUEPRINT};'
-        f'padding-bottom:12px;">'
+        f'padding:14px;">'
         f'<div style="display:flex;align-items:center;gap:12px;">{_mark_svg(34)}'
         f'<div><div style="font-family:{FONT_SANS};font-size:24px;font-weight:800;'
         f'color:{INK};line-height:1.1;">North Arrow</div>'

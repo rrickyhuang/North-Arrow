@@ -201,7 +201,8 @@ def _actions_html(job) -> str:
 
 # ── Cover-letter panel (lazily loaded into #cl-<id> on demand) ────────────────
 _CL_INPUT = (f"width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid "
-             f"{GRID};border-radius:6px;font-size:13px;font-family:inherit;")
+             f"{GRID};border-radius:6px;font-size:13px;font-family:inherit;"
+             f"background:{PAPER_RAISED};color:{INK};")
 _CL_WORKING = (f'<span class="htmx-indicator" style="color:{html_render._STAGE_COLOR["interviewing"]};font-size:12px;'
                'margin-left:8px;">working… (up to ~60s)</span>')
 

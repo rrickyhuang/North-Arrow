@@ -161,7 +161,7 @@ jobspy:
 # ── Enrichment ───────────────────────────────────────────────────────────────
 enrichment:
   model: "claude-haiku-4-5"
-  max_description_chars: 3000
+  max_description_chars: 8000
   enabled: true
 
 # ── Delivery ─────────────────────────────────────────────────────────────────
