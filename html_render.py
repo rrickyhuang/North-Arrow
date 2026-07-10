@@ -12,25 +12,30 @@ import re
 from datetime import date, datetime, timezone
 
 # ── North Arrow brand ────────────────────────────────────────────────────
-# Structural/chrome colors — headings, borders, links. Kept separate from the
-# functional status colors below, which encode meaning (qualification tier,
-# pipeline stage) and must stay visually distinct from brand chrome.
-PAPER = "#f3efe6"
-PAPER_RAISED = "#faf7f0"
-INK = "#171f2e"
-BLUEPRINT = "#1e3f73"
-BLUEPRINT_BRIGHT = "#3d6fc2"
-GRID = "#c7d2e1"
-GRID_FAINT = "#dde5ef"
-MUTED = "#5b6478"
-MUTED_LIGHT = "#7d879c"
-TINT = "#e4ecf9"  # light active/highlight background, e.g. selected filter chips
+# Single locked-in scheme (navy/cyanotype-blueprint) — deliberately no light
+# variant and no theme-switching. Structural/chrome colors — headings,
+# borders, links — are kept separate from the functional status colors below,
+# which encode meaning (qualification tier, pipeline stage) and must stay
+# visually distinct from brand chrome.
+PAPER = "#10161f"
+PAPER_RAISED = "#161d29"
+INK = "#e7e2d3"
+BLUEPRINT = "#7fa8e8"
+BLUEPRINT_BRIGHT = "#9bc0ff"
+GRID = "#27384e"
+GRID_FAINT = "#1c2836"
+MUTED = "#8b93a6"
+MUTED_LIGHT = "#6b7385"
+TINT = "#233a56"  # active/highlight background, e.g. selected filter chips
 
 FONT_SANS = "-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif"
 FONT_MONO = "ui-monospace,SF Mono,Cascadia Mono,Consolas,monospace"
 
-# A monoline pen-nib favicon (the north-up mark) — falls back to a solid
-# silhouette since the outline strokes are too thin to render at 16x16.
+# A monoline pen-nib favicon (the north-up mark). Deliberately a fixed deep
+# navy rather than the on-page BLUEPRINT — favicons sit in the browser's own
+# (usually light) tab bar, not on our dark page background, so it needs its
+# own contrast. Falls back to a solid silhouette since the outline strokes
+# are too thin to render at 16x16.
 FAVICON_LINK = (
     '<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 '
     'viewBox=%270 0 100 100%27%3E%3Cpolygon points=%2750,8 68,44 50,90 32,44%27 '
@@ -81,10 +86,10 @@ def is_overdue_followup(job, days: int = FOLLOW_UP_AFTER_DAYS) -> bool:
 
 
 _QUAL_COLOR = {
-    "qualified": "#1e8a4c",
-    "stretch": "#b9862a",
-    "reach": "#bd5a2e",
-    "overqualified": "#5c7a90",
+    "qualified": "#3fae6e",
+    "stretch": "#d9a44c",
+    "reach": "#d97f52",
+    "overqualified": "#8aa2b4",
 }
 
 # Digest grouping: cards are bucketed by how applyable they are (enrichment's
@@ -213,8 +218,8 @@ STAGE_LABEL = {"applied": "Applied", "interviewing": "Interviewing", "offer": "O
 # the whole tool is built around. The rest are harmonized to the same
 # saturation/lightness band as the qualification colors above, just a
 # different hue per stage.
-_STAGE_COLOR = {"applied": BLUEPRINT_BRIGHT, "interviewing": "#7c5fd1", "offer": "#1e8a4c",
-                "denied": "#b23b4c", "withdrawn": "#6e7480"}
+_STAGE_COLOR = {"applied": BLUEPRINT_BRIGHT, "interviewing": "#a98ce8", "offer": "#3fae6e",
+                "denied": "#d65f70", "withdrawn": "#9aa0ac"}
 
 
 def split_by_stage(jobs: list) -> tuple[list, list]:
@@ -392,7 +397,7 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
         f'<div{id_attr}{data} style="border:1px solid {GRID};border-radius:10px;padding:14px 16px;'
         f'margin-bottom:14px;font-family:{FONT_SANS};">'
         f'<div style="font-size:16px;font-weight:600;color:{BLUEPRINT_BRIGHT};line-height:1.35;">'
-        f'<a href="{_esc(job.url)}" style="color:{BLUEPRINT_BRIGHT};text-decoration:none;">{title}</a>'
+        f'<a href="{_esc(job.url)}" target="_blank" rel="noopener" style="color:{BLUEPRINT_BRIGHT};text-decoration:none;">{title}</a>'
         f'{star}{new}{stage}</div>'
         f'<div style="color:{MUTED};font-size:13px;margin:2px 0 8px;">{_esc(job.company or "Unknown")}</div>'
         f'{id_row}'
@@ -451,7 +456,7 @@ def _tracker_row(job, row_no: int | None) -> str:
         f'margin-bottom:8px;font-family:{FONT_SANS};">'
         f'<span style="background:{color};color:#fff;font-size:11px;padding:1px 8px;'
         f'border-radius:10px;white-space:nowrap;">{_esc(STAGE_LABEL[job.stage]).upper()}</span> '
-        f'<a href="{_esc(job.url)}" style="color:{BLUEPRINT_BRIGHT};text-decoration:none;font-weight:600;'
+        f'<a href="{_esc(job.url)}" target="_blank" rel="noopener" style="color:{BLUEPRINT_BRIGHT};text-decoration:none;font-weight:600;'
         f'font-size:14px;">{_esc(job.title)}</a> '
         f'<span style="color:{MUTED};font-size:13px;">— {_esc(job.company or "Unknown")}</span>'
         f'<span style="color:{MUTED_LIGHT};font-size:12px;">{when}{rowtxt}</span></div>'
