@@ -253,6 +253,11 @@ def query(
     order_by: str = "score DESC",
     limit: int | None = None,
 ) -> list[Job]:
+    col, _, direction = order_by.strip().partition(" ")
+    direction = direction.upper() or "ASC"
+    if col not in _COLUMNS or direction not in ("ASC", "DESC"):
+        raise ValueError(f"invalid order_by: {order_by!r}")
+
     sql = "SELECT * FROM jobs WHERE 1=1"
     params: list = []
     if min_score is not None:
@@ -264,7 +269,7 @@ def query(
         sql += " AND dismissed = 0"
     if not include_duplicates:
         sql += " AND duplicate_of IS NULL"
-    sql += f" ORDER BY {order_by}"
+    sql += f" ORDER BY {col} {direction}"
     if limit:
         sql += " LIMIT ?"
         params.append(limit)
