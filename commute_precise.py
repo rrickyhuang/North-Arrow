@@ -98,7 +98,9 @@ def refine(job: Job, cfg: dict) -> int | None:
         resp.raise_for_status()
         data = resp.json()
     except (requests.RequestException, ValueError) as e:
-        log.warning("Distance Matrix call failed for %s: %s", job.id, e)
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        log.warning("Distance Matrix call failed for %s: %s%s", job.id, type(e).__name__,
+                    f" (HTTP {status})" if status else "")
         return None
 
     if data.get("status") != "OK":
