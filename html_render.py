@@ -27,6 +27,8 @@ GRID_FAINT = "#1c2836"
 MUTED = "#8b93a6"
 MUTED_LIGHT = "#6b7385"
 TINT = "#233a56"  # active/highlight background, e.g. selected filter chips
+ERROR_BG = "#2a151b"  # dark-red-tinted panel bg, same family as _STAGE_COLOR["denied"]
+ERROR_BORDER = "#5c2530"
 
 FONT_SANS = "-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif"
 FONT_MONO = "ui-monospace,SF Mono,Cascadia Mono,Consolas,monospace"
@@ -145,7 +147,8 @@ def _section_html(label: str, jobs: list, card_fn) -> str:
     if not jobs:
         return ""
     return (
-        f'<h3 style="margin:20px 0 10px;font-size:15px;color:{INK};'
+        f'<h3 style="margin:20px 0 10px;font-family:{FONT_MONO};font-size:19px;'
+        f'font-weight:500;letter-spacing:-0.02em;color:{INK};'
         f'border-bottom:1px solid {GRID};padding-bottom:6px;">'
         f'{_esc(label)} <span style="color:{MUTED_LIGHT};font-weight:400;">'
         f'({len(jobs)})</span></h3>'
@@ -273,9 +276,9 @@ def _bar(score: float) -> str:
     color = (_QUAL_COLOR["qualified"] if score >= 0.6
              else (_QUAL_COLOR["stretch"] if score >= 0.4 else _QUAL_COLOR["reach"]))
     return (
-        f'<div style="background:{GRID_FAINT};border-radius:6px;height:10px;width:160px;'
+        f'<div style="background:{GRID_FAINT};height:9px;width:160px;'
         f'display:inline-block;vertical-align:middle;overflow:hidden;">'
-        f'<div style="background:{color};height:10px;width:{pct}%;"></div></div>'
+        f'<div style="background:{color};height:9px;width:{pct}%;"></div></div>'
         f'<span style="color:{MUTED};font-size:13px;margin-left:8px;">{score:.2f}</span>'
     )
 
@@ -292,17 +295,17 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
         title = f"{rank}. {title}"
     star = f' <span style="color:{_QUAL_COLOR["stretch"]};">★</span>' if is_starred(job) else ""
     new = (f' <span style="background:{_QUAL_COLOR["qualified"]};color:#fff;font-size:11px;'
-           'padding:1px 6px;border-radius:10px;white-space:nowrap;">NEW</span>'
+           'padding:1px 6px;white-space:nowrap;">NEW</span>'
            ) if job.is_new else ""
     stage = ""
     if job.stage:
         sc = _STAGE_COLOR.get(job.stage, "#6e7480")
         stage = (f' <span style="background:{sc};color:#fff;font-size:11px;'
-                 f'padding:1px 6px;border-radius:10px;white-space:nowrap;">'
+                 f'padding:1px 6px;white-space:nowrap;">'
                  f'{_esc(STAGE_LABEL.get(job.stage, job.stage.title()))}</span>')
 
     meta = " &nbsp;·&nbsp; ".join([
-        f"<b>{_esc(job.role_type or '?')}</b>",
+        f'<b style="color:{INK};">{_esc(job.role_type or "?")}</b>',
         _commute(job),
         _salary(job),
         f"<i>{_esc(job.source)}</i>",
@@ -324,15 +327,15 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
                     f'font-size:13px;">{items}</ul>')
         qual_html = (
             f'<div style="margin-top:6px;font-size:13px;">'
-            f'<span style="background:{c};color:#fff;padding:1px 8px;border-radius:10px;'
-            f'font-weight:600;white-space:nowrap;">{_esc(job.qualification).upper()}</span> '
+            f'<span style="background:{c};color:#fff;padding:1px 8px;font-size:11px;'
+            f'font-weight:700;letter-spacing:0.05em;white-space:nowrap;">{_esc(job.qualification).upper()}</span> '
             f'<span style="color:{MUTED};">posting seniority: {_esc(job.seniority or "?")}{yrs}</span>'
             f'{gaps}</div>'
         )
 
     id_row = ""
     if row_no is not None:
-        id_row = (f'<div style="color:{MUTED_LIGHT};font-size:12px;margin-top:2px;'
+        id_row = (f'<div style="color:{MUTED};font-size:12px;margin-top:2px;'
                   f'font-family:{FONT_MONO};">'
                   f'id <code style="user-select:all;">{_esc(job.id)}</code> '
                   f'&nbsp;·&nbsp; #{row_no}</div>')
@@ -366,16 +369,16 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
     dq = ""
     if job.disqualifier:
         dq = (f'<div style="margin-top:6px;"><span style="background:{_STAGE_COLOR["denied"]};color:#fff;'
-              f'font-size:11px;padding:2px 8px;border-radius:10px;white-space:nowrap;">'
+              f'font-size:11px;padding:2px 8px;white-space:nowrap;">'
               f'disqualified: {_esc(job.disqualifier)}</span></div>')
     if job.duplicate_of:
         dq += (f'<div style="margin-top:6px;"><span style="background:{MUTED};color:#fff;'
-               f'font-size:11px;padding:2px 8px;border-radius:10px;white-space:nowrap;">'
+               f'font-size:11px;padding:2px 8px;white-space:nowrap;">'
                f'duplicate posting</span></div>')
     stale = report and is_stale(job, stale_days)
     if stale:
         dq += (f'<div style="margin-top:6px;"><span style="background:{_QUAL_COLOR["stretch"]};color:#fff;'
-               f'font-size:11px;padding:2px 8px;border-radius:10px;white-space:nowrap;">'
+               f'font-size:11px;padding:2px 8px;white-space:nowrap;">'
                f'stale — not seen in {stale_days}+ days</span></div>')
 
     # data-* attributes + class so the report/web-UI script can filter on them.
@@ -395,9 +398,9 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
 
     return (
         f'<div{id_attr}{data} style="background:{PAPER_RAISED};border:1px solid {GRID};'
-        f'border-radius:10px;padding:14px 16px;margin-bottom:14px;font-family:{FONT_SANS};">'
-        f'<div style="font-size:16px;font-weight:600;color:{BLUEPRINT_BRIGHT};line-height:1.35;">'
-        f'<a href="{_esc(job.url)}" target="_blank" rel="noopener" style="color:{BLUEPRINT_BRIGHT};text-decoration:none;">{title}</a>'
+        f'padding:16px 18px;margin-bottom:14px;font-family:{FONT_SANS};">'
+        f'<div style="font-size:16px;font-weight:700;color:{BLUEPRINT};line-height:1.35;">'
+        f'<a href="{_esc(job.url)}" target="_blank" rel="noopener" style="color:{BLUEPRINT};text-decoration:none;">{title}</a>'
         f'{star}{new}{stage}</div>'
         f'<div style="color:{MUTED};font-size:13px;margin:2px 0 8px;">{_esc(job.company or "Unknown")}</div>'
         f'{id_row}'
@@ -494,8 +497,8 @@ def page(title: str, intro: str, body: str, *, head_extra: str = "",
     ) if chrome else ""
     view = title.split("—", 1)[1].strip() if "—" in title else title
     footer = (
-        f'<div style="display:flex;justify-content:space-between;border-top:1.5px solid {BLUEPRINT};'
-        f'padding-top:10px;margin-top:24px;font-family:{FONT_MONO};font-size:11px;'
+        f'<div style="display:flex;justify-content:space-between;border-top:1px solid {GRID};'
+        f'padding-top:10px;margin-top:24px;font-family:{FONT_MONO};font-size:10.5px;'
         f'color:{MUTED};letter-spacing:0.04em;">'
         f'<span>NORTH ARROW &middot; {_esc(view).upper()}</span>'
         f'<span>{date.today().isoformat()}</span></div>'
@@ -509,7 +512,7 @@ def page(title: str, intro: str, body: str, *, head_extra: str = "",
         for v, h in (("top", "left"), ("top", "right"), ("bottom", "left"), ("bottom", "right"))
     ) if chrome else ""
     heading = (
-        f'<div style="position:relative;overflow:hidden;border-radius:10px;'
+        f'<div style="position:relative;overflow:hidden;'
         f'border:1px solid {GRID};background:{PAPER_RAISED};margin-bottom:6px;">'
         f'{_contour_backdrop("naContours")}'
         f'<div style="position:relative;z-index:1;display:flex;justify-content:space-between;'
@@ -527,13 +530,25 @@ def page(title: str, intro: str, body: str, *, head_extra: str = "",
         f'<h1 style="font-family:{FONT_SANS};'
         f'font-size:22px;color:{INK};margin:0 0 4px;">{_esc(title)}</h1>'
     )
+    # Dark scrollbars (both the page's own and any nested overflow-x row like
+    # the pipeline board) — otherwise the OS default renders as a thick light
+    # grey bar that clashes hard against the dark page and can visually
+    # collide with content sitting right below a scroll container.
+    scrollbar_css = (
+        f'<style>*{{scrollbar-width:thin;scrollbar-color:{GRID} {PAPER_RAISED};}}'
+        f'::-webkit-scrollbar{{width:10px;height:10px;}}'
+        f'::-webkit-scrollbar-track{{background:{PAPER_RAISED};}}'
+        f'::-webkit-scrollbar-thumb{{background:{GRID};border:2px solid {PAPER_RAISED};}}'
+        f'::-webkit-scrollbar-thumb:hover{{background:{BLUEPRINT};}}</style>'
+    ) if chrome else ""
     return (
         f'<!doctype html><html><head><meta charset="utf-8">'
         f'<meta name="viewport" content="width=device-width,initial-scale=1">'
-        f'<title>{_esc(title)}</title>{FAVICON_LINK}{head_extra}</head>'
-        f'<body style="margin:0;background:{PAPER};{grid_bg}padding:20px;">'
+        f'<title>{_esc(title)}</title>{FAVICON_LINK}{scrollbar_css}{head_extra}</head>'
+        f'<body style="margin:0;background:{PAPER};{grid_bg}padding:20px;'
+        f'font-family:{FONT_SANS};color:{INK};">'
         f'<div style="max-width:{max_width}px;margin:0 auto;position:relative;'
-        f'padding:{"14px" if chrome else "0"};">'
+        f'padding:{"14px 14px 30px" if chrome else "0"};">'
         f'{corners}'
         f'{heading}'
         f'<div style="font-family:{FONT_SANS};'
@@ -550,11 +565,11 @@ def _tracker_row(job, row_no: int | None) -> str:
             if job.stage_at else "")
     rowtxt = f" &nbsp;·&nbsp; #{row_no}" if row_no is not None else ""
     return (
-        f'<div style="border:1px solid {GRID_FAINT};border-radius:8px;padding:8px 12px;'
+        f'<div style="border:1px solid {GRID_FAINT};padding:8px 12px;'
         f'margin-bottom:8px;font-family:{FONT_SANS};">'
         f'<span style="background:{color};color:#fff;font-size:11px;padding:1px 8px;'
-        f'border-radius:10px;white-space:nowrap;">{_esc(STAGE_LABEL[job.stage]).upper()}</span> '
-        f'<a href="{_esc(job.url)}" target="_blank" rel="noopener" style="color:{BLUEPRINT_BRIGHT};text-decoration:none;font-weight:600;'
+        f'white-space:nowrap;">{_esc(STAGE_LABEL[job.stage]).upper()}</span> '
+        f'<a href="{_esc(job.url)}" target="_blank" rel="noopener" style="color:{BLUEPRINT};text-decoration:none;font-weight:600;'
         f'font-size:14px;">{_esc(job.title)}</a> '
         f'<span style="color:{MUTED};font-size:13px;">— {_esc(job.company or "Unknown")}</span>'
         f'<span style="color:{MUTED_LIGHT};font-size:12px;">{when}{rowtxt}</span></div>'
@@ -603,7 +618,7 @@ def digest_html(primary: list, near: list, tracked: list, cfg: dict,
 
 
 # ── Browser report: search + filter controls ────────────────────────────────
-_INPUT_STYLE = (f"padding:6px 8px;border:1px solid {GRID};border-radius:6px;"
+_INPUT_STYLE = (f"padding:6px 8px;border:1px solid {GRID};"
                 f"font-size:13px;font-family:inherit;background:{PAPER_RAISED};color:{INK};")
 
 
@@ -784,7 +799,8 @@ def inbox_partition(jobs: list, stale_days: int = STALE_AFTER_DAYS, *,
 def _grp_header(label: str, count: int, *, noise: bool) -> str:
     return (
         f'<h3 class="grp" data-noise="{0 if not noise else 1}" '
-        f'style="margin:22px 0 10px;font-size:15px;color:{INK};'
+        f'style="margin:22px 0 10px;font-family:{FONT_MONO};font-size:19px;'
+        f'font-weight:500;letter-spacing:-0.02em;color:{INK};'
         f'border-bottom:1px solid {GRID};padding-bottom:6px;">'
         f'{_esc(label)} <span class="grp-n" style="color:{MUTED_LIGHT};font-weight:400;">'
         f'({count})</span></h3>'
@@ -815,7 +831,7 @@ def inbox_controls(jobs: list, *, new_count: int, queue_count: int,
     src_opts = "".join(f'<option value="{_esc(s)}">{_esc(s)}</option>' for s in sources)
     # Qualification allow-list chips: none selected = no filter (show all fits);
     # selecting some narrows to just those. Order = most- to least-applyable.
-    chip_style = (f"padding:3px 10px;border-radius:12px;border:1px solid {GRID};"
+    chip_style = (f"padding:3px 10px;border:1px solid {GRID};"
                   f"background:{PAPER_RAISED};font-size:12px;cursor:pointer;font-family:inherit;"
                   f"color:{INK};opacity:0.55;")
     chips = "".join(

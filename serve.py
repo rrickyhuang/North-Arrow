@@ -29,8 +29,9 @@ import coverletter
 import db
 import html_render
 import logutil
-from html_render import (BLUEPRINT_BRIGHT, FONT_SANS, GRID, GRID_FAINT, INK,
-                         MUTED, MUTED_LIGHT, PAPER, PAPER_RAISED, TINT)
+from html_render import (BLUEPRINT_BRIGHT, ERROR_BG, ERROR_BORDER, FONT_SANS,
+                         GRID, GRID_FAINT, INK, MUTED, MUTED_LIGHT, PAPER,
+                         PAPER_RAISED, TINT)
 
 log = logging.getLogger("serve")
 
@@ -123,7 +124,7 @@ def _scrape_control_html(state: dict) -> str:
 # Stage buttons offered on each card, in pipeline order. None == clear/not-applied.
 _STAGE_CHOICES = ("applied", "interviewing", "offer", "denied", "withdrawn")
 
-_BTN = (f"display:inline-block;padding:3px 9px;margin:0 4px 4px 0;border-radius:6px;"
+_BTN = (f"display:inline-block;padding:3px 9px;margin:0 4px 4px 0;"
         f"border:1px solid {GRID};background:{PAPER_RAISED};color:{INK};font-size:12px;"
         f"cursor:pointer;font-family:inherit;")
 _BTN_ON = _BTN + f"background:{BLUEPRINT_BRIGHT};color:#fff;border-color:{BLUEPRINT_BRIGHT};"
@@ -202,7 +203,7 @@ def _actions_html(job) -> str:
 
 # ── Cover-letter panel (lazily loaded into #cl-<id> on demand) ────────────────
 _CL_INPUT = (f"width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid "
-             f"{GRID};border-radius:6px;font-size:13px;font-family:inherit;"
+             f"{GRID};font-size:13px;font-family:inherit;"
              f"background:{PAPER_RAISED};color:{INK};")
 _CL_WORKING = (f'<span class="htmx-indicator" style="color:{html_render._STAGE_COLOR["interviewing"]};font-size:12px;'
                'margin-left:8px;">working… (up to ~60s)</span>')
@@ -216,7 +217,7 @@ def _cl_close_btn(job) -> str:
 def _cl_draft_form(job) -> str:
     return (
         f'<div style="margin-top:10px;background:{PAPER};border:1px solid {GRID};'
-        'border-radius:8px;padding:12px;">'
+        'padding:12px;">'
         f'{_cl_close_btn(job)}'
         f'<form hx-post="/job/{job.id}/coverletter/draft" hx-target="#cl-{job.id}" '
         f'hx-swap="innerHTML" hx-disabled-elt="find button">'
@@ -232,7 +233,7 @@ def _cl_view(job, body: str) -> str:
     path = coverletter.letter_path(job)
     return (
         f'<div style="margin-top:10px;background:{PAPER};border:1px solid {GRID};'
-        'border-radius:8px;padding:12px;">'
+        'padding:12px;">'
         f'{_cl_close_btn(job)}'
         f'<div style="font-size:12px;color:{MUTED};margin-bottom:6px;">saved: '
         f'<code style="user-select:all;word-break:break-all;overflow-wrap:anywhere;">'
@@ -251,8 +252,8 @@ def _cl_view(job, body: str) -> str:
 
 def _cl_panel(job, error: str = "") -> str:
     from markupsafe import escape
-    banner = (f'<div style="margin-top:10px;background:#f7e4e7;border:1px solid '
-              f'#e3aab1;border-radius:8px;padding:10px;color:{html_render._STAGE_COLOR["denied"]};font-size:13px;">'
+    banner = (f'<div style="margin-top:10px;background:{ERROR_BG};border:1px solid '
+              f'{ERROR_BORDER};padding:10px;color:{html_render._STAGE_COLOR["denied"]};font-size:13px;">'
               f'{escape(error)}</div>') if error else ""
     body = coverletter.letter_body(job)
     return banner + (_cl_view(job, body) if body is not None else _cl_draft_form(job))
@@ -328,7 +329,7 @@ _BOARD_MOVES = [
 # kanban; the row itself scrolls horizontally when they don't all fit (desktop
 # overflow / mobile).
 _COL_STYLE = (f"flex:0 0 264px;background:{PAPER};border:1px solid {GRID};"
-              "border-radius:10px;padding:10px;")
+              "padding:10px;")
 
 
 def _followup_days() -> int:
@@ -356,10 +357,14 @@ def _board_card(job, followup_days: int) -> str:
     )
     border = (f"border:1px solid {html_render._QUAL_COLOR['stretch']};" if overdue
               else f"border:1px solid {GRID};")
+    # Left-edge stripe in the job's qualification color — the board otherwise
+    # carries no color coding at all (stage is implied by column instead),
+    # making it impossible to scan for strong-fit jobs at a glance.
+    qual_color = html_render._QUAL_COLOR.get(job.qualification, MUTED)
     return (
         f'<div draggable="true" ondragstart="boardDragStart(event, \'{job.id}\')" '
-        f'style="background:{PAPER_RAISED};{border}border-radius:8px;cursor:grab;'
-        'padding:9px 11px;margin-bottom:9px;">'
+        f'style="background:{PAPER_RAISED};{border}border-left:3px solid {qual_color};cursor:grab;'
+        'padding:9px 9px 9px 8px;margin-bottom:9px;">'
         f'<div style="font-size:14px;font-weight:600;line-height:1.3;">'
         f'<a href="{escape(job.url)}" style="color:{BLUEPRINT_BRIGHT};text-decoration:none;">'
         f'{escape(job.title)}</a></div>'
@@ -407,7 +412,7 @@ def _board_html(conn) -> str:
 def _nav(active: str) -> str:
     def link(href, label, key):
         on = key == active
-        style = ("padding:6px 12px;border-radius:6px;text-decoration:none;font-size:14px;"
+        style = ("padding:6px 12px;text-decoration:none;font-size:14px;"
                  + (f"background:{BLUEPRINT_BRIGHT};color:#fff;" if on else f"color:{BLUEPRINT_BRIGHT};"))
         return f'<a href="{href}" style="{style}">{label}</a>'
     return (f'<div style="margin-bottom:16px;display:flex;gap:8px;align-items:center;'
