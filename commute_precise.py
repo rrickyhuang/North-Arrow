@@ -80,6 +80,13 @@ def refine(job: Job, cfg: dict) -> int | None:
         return None
     if job.is_remote or job.location_lat is None or job.location_lng is None:
         return None
+    if job.commute_min is None:
+        # commute.py's estimate() geocoded this address but still fell back to
+        # unknown_location_score (e.g. >10km from any station — bad geocode or
+        # genuinely unserved; see commute.estimate's walk_km guard). Don't let
+        # a real Google route silently launder an address the free estimate
+        # itself refused to trust.
+        return None
 
     home_lat, home_lng = _home_coords(cfg)
     if home_lat is None:
