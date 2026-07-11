@@ -105,6 +105,16 @@ QUAL_BUCKETS = [
 ]
 _OTHER_BUCKET = "Other matches"
 
+# Color swatch shown next to each bucket's heading — reuses the exact same
+# hues as the qualification pill on the cards inside it, so the heading
+# color and the cards underneath always agree.
+_QUAL_BUCKET_COLOR = {
+    "Apply now": _QUAL_COLOR["qualified"],
+    "Stretch — worth a shot": _QUAL_COLOR["stretch"],
+    "Reach — long shots": _QUAL_COLOR["reach"],
+    _OTHER_BUCKET: MUTED,
+}
+
 def is_starred(job) -> bool:
     """Saved/interested, and not yet moved into a pipeline stage (once staged,
     the stage badge takes over — see job_card)."""
@@ -141,7 +151,18 @@ def group_by_qual(jobs: list) -> list[tuple[str, list]]:
     return groups
 
 
-def _section_html(label: str, jobs: list, card_fn) -> str:
+def _swatch(color: str | None) -> str:
+    """A small square color indicator prefixed to a group/section heading —
+    plain inline-block + background-color, so it's safe in the email digest
+    too (no gradient, no JS). Renders nothing if the group has no natural
+    color mapping, rather than guessing one."""
+    if not color:
+        return ""
+    return (f'<span style="display:inline-block;width:9px;height:9px;'
+            f'background:{color};margin-right:8px;vertical-align:middle;"></span>')
+
+
+def _section_html(label: str, jobs: list, card_fn, *, color: str | None = None) -> str:
     """One heading + its cards, no further grouping. Empty sections render
     nothing so callers can pass possibly-empty lists unconditionally."""
     if not jobs:
@@ -150,7 +171,7 @@ def _section_html(label: str, jobs: list, card_fn) -> str:
         f'<h3 style="margin:20px 0 10px;font-family:{FONT_MONO};font-size:19px;'
         f'font-weight:500;letter-spacing:-0.02em;color:{INK};'
         f'border-bottom:1px solid {GRID};padding-bottom:6px;">'
-        f'{_esc(label)} <span style="color:{MUTED_LIGHT};font-weight:400;">'
+        f'{_swatch(color)}{_esc(label)} <span style="color:{MUTED_LIGHT};font-weight:400;">'
         f'({len(jobs)})</span></h3>'
         + "".join(card_fn(j) for j in jobs)
     )
@@ -179,7 +200,8 @@ def bucketed_cards_html(jobs: list, card_fn) -> str:
     idempotent), but isn't required and shouldn't be relied on."""
     open_jobs = [j for j in jobs if _is_open(j)]
     return "".join(
-        _section_html(label, members, card_fn) for label, members in group_by_qual(open_jobs)
+        _section_html(label, members, card_fn, color=_QUAL_BUCKET_COLOR.get(label))
+        for label, members in group_by_qual(open_jobs)
     )
 
 
@@ -202,8 +224,9 @@ def staged_cards_html(jobs: list, card_fn) -> str:
     staged = [j for j in jobs if j.stage and not _is_screened_out(j)]
     tracked = [j for j in staged if j.stage in ACTIVE_STAGES]
     closed = [j for j in staged if j.stage in ("denied", "withdrawn")]
-    parts = [_section_html(label, members, card_fn) for _st, label, members in group_by_stage(tracked)]
-    parts.append(_section_html("Closed", closed, card_fn))
+    parts = [_section_html(label, members, card_fn, color=_STAGE_COLOR.get(st))
+             for st, label, members in group_by_stage(tracked)]
+    parts.append(_section_html("Closed", closed, card_fn, color=_STAGE_COLOR["withdrawn"]))
     return "".join(parts)
 
 
@@ -602,7 +625,8 @@ def digest_html(primary: list, near: list, tracked: list, cfg: dict,
         for label, members in group_by_qual(primary):
             body += (f'<h2 style="font-family:{FONT_SANS};'
                      f'font-size:17px;color:{INK};margin:24px 0 12px;">'
-                     f'{_esc(label)} <span style="color:{MUTED_LIGHT};font-weight:400;font-size:14px;">'
+                     f'{_swatch(_QUAL_BUCKET_COLOR.get(label))}{_esc(label)} '
+                     f'<span style="color:{MUTED_LIGHT};font-weight:400;font-size:14px;">'
                      f'({len(members)})</span></h2>')
             body += "".join(job_card(j, i, row_no=row_of.get(j.id))
                             for i, j in enumerate(members, 1))
@@ -796,13 +820,28 @@ def inbox_partition(jobs: list, stale_days: int = STALE_AFTER_DAYS, *,
     return queue_groups, noise_groups, pipeline
 
 
+# Each inbox group's swatch reuses a color already meaningful elsewhere in
+# the app, rather than inventing new ones: Saved matches the star icon,
+# New matches the NEW badge, and the noise groups match their own pills.
+_INBOX_GROUP_COLOR = {
+    "★ Saved": _QUAL_COLOR["stretch"],
+    "New to triage": _QUAL_COLOR["qualified"],
+    "Backlog": MUTED,
+    "Screened out": _STAGE_COLOR["denied"],
+    "Duplicates": MUTED,
+    "Dismissed": MUTED,
+    "Likely closed (stale)": _QUAL_COLOR["stretch"],
+}
+
+
 def _grp_header(label: str, count: int, *, noise: bool) -> str:
     return (
         f'<h3 class="grp" data-noise="{0 if not noise else 1}" '
         f'style="margin:22px 0 10px;font-family:{FONT_MONO};font-size:19px;'
         f'font-weight:500;letter-spacing:-0.02em;color:{INK};'
         f'border-bottom:1px solid {GRID};padding-bottom:6px;">'
-        f'{_esc(label)} <span class="grp-n" style="color:{MUTED_LIGHT};font-weight:400;">'
+        f'{_swatch(_INBOX_GROUP_COLOR.get(label))}{_esc(label)} '
+        f'<span class="grp-n" style="color:{MUTED_LIGHT};font-weight:400;">'
         f'({count})</span></h3>'
     )
 
