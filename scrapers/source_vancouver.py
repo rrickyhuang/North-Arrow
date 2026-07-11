@@ -76,7 +76,7 @@ def fetch(cfg: dict) -> list[dict]:
                 try:
                     posted_at = dateparse.parse(date_span.get_text(strip=True), fuzzy=True)
                 except (ValueError, OverflowError):
-                    pass
+                    log.debug("unparseable date %r", date_span.get_text(strip=True))
 
             description, org = _detail(fetcher, job_url)
             company = org or "City of Vancouver"

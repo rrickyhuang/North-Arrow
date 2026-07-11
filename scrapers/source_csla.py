@@ -79,7 +79,7 @@ def fetch(cfg: dict) -> list[dict]:
             try:
                 posted_at = dateparse.parse(r["date"], fuzzy=True)
             except (ValueError, OverflowError):
-                pass
+                log.debug("unparseable date %r", r["date"])
         description = _detail(fetcher, url) or r.get("title", "")
         records.append({
             "source": SOURCE,

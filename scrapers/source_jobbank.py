@@ -79,7 +79,7 @@ def _parse_card(card) -> dict | None:
         try:
             posted_at = dateparse.parse(posted_raw, fuzzy=True)
         except (ValueError, OverflowError):
-            pass
+            log.debug("unparseable date %r", posted_raw)
     salary_el = link.select_one("li.salary")
     salary_raw = None
     if salary_el:

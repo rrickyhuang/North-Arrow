@@ -67,7 +67,7 @@ def fetch(cfg: dict) -> list[dict]:
             try:
                 posted_at = dateparse.parse(posted_raw, fuzzy=True)
             except (ValueError, OverflowError):
-                pass
+                log.debug("unparseable date %r", posted_raw)
 
         description = _detail(fetcher, job_url) or row.get_text(" | ", strip=True)
 

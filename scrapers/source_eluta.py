@@ -96,7 +96,7 @@ def _detail(fetcher: Fetcher, url: str) -> dict | None:
         try:
             posted_at = dateparse.parse(data["datePosted"])
         except (ValueError, OverflowError):
-            pass
+            log.debug("unparseable date %r", data["datePosted"])
     return {
         "url": data.get("identifier") or url,
         "title": data.get("title", ""),
