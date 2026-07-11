@@ -293,7 +293,11 @@ def main() -> None:
     consumed: set[int] = set()  # arg indices consumed as a flag's value, not a target
     for i, a in enumerate(args):
         if a == "--min" and i + 1 < len(args):
-            min_score = float(args[i + 1])
+            try:
+                min_score = float(args[i + 1])
+            except ValueError:
+                print(f"\n  --min expects a number, got {args[i + 1]!r}\n")
+                sys.exit(1)
             consumed.add(i + 1)
         elif a == "--filter" and i + 1 < len(args):
             raw = args[i + 1]
