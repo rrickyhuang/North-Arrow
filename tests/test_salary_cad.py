@@ -34,9 +34,8 @@ def test_hourly_single_annualizes():
 def test_non_cad_currency_is_skipped():
     assert parse_salary("$90,000 USD") == (None, None, None)
     assert parse_salary("GBP 45,000") == (None, None, None)
-    # NOTE: the £/€ *symbol* forms don't currently get caught (a separate,
-    # pre-existing regex word-boundary bug flagged out of scope for this
-    # test suite) — only the word forms (USD/GBP/EUR/AUD) are covered here.
+    assert parse_salary("salary of £45,000") == (None, None, None)
+    assert parse_salary("€45,000 per year") == (None, None, None)
 
 
 def test_no_salary_mentioned():

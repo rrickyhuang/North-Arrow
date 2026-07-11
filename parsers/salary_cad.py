@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-_NON_CAD = re.compile(r"\b(USD|US\$|GBP|£|EUR|€|AUD)\b", re.I)
+_NON_CAD = re.compile(r"\b(USD|US\$|GBP|EUR|AUD)\b|[£€]", re.I)
 
 # Each pattern yields a (low, high?) pair. Order matters: most specific first.
 _RANGE_PATTERNS = [
