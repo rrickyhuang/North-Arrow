@@ -318,6 +318,17 @@ _BOARD_COLUMNS = [
     ("offer", "Offer", lambda j: j.stage == "offer", "offer"),
     ("closed", "Closed", lambda j: j.stage in ("denied", "withdrawn"), None),
 ]
+# Column swatch colors — "interested" matches the star icon's gold (same
+# concept as the cockpit's "★ Saved" group), the rest reuse the exact stage
+# badge hues, "closed" reuses the same neutral used for the report's mixed
+# denied/withdrawn "Closed" section.
+_BOARD_COLUMN_COLOR = {
+    "interested": html_render._QUAL_COLOR["stretch"],
+    "applied": html_render._STAGE_COLOR["applied"],
+    "interviewing": html_render._STAGE_COLOR["interviewing"],
+    "offer": html_render._STAGE_COLOR["offer"],
+    "closed": html_render._STAGE_COLOR["withdrawn"],
+}
 # Where each card can move to. "interested" = shortlist w/o a stage; "remove"
 # = drop off the board entirely (clear stage + interested).
 _BOARD_MOVES = [
@@ -380,7 +391,7 @@ def _board_html(conn) -> str:
                     order_by="score DESC")
     followup_days = _followup_days()
     cols = ""
-    for _key, label, pred, drop_target in _BOARD_COLUMNS:
+    for key, label, pred, drop_target in _BOARD_COLUMNS:
         members = [j for j in jobs if pred(j)]
         overdue_n = sum(1 for j in members if html_render.is_overdue_followup(j, followup_days))
         overdue_badge = (f' <span style="color:{html_render._QUAL_COLOR["stretch"]};font-weight:600;">⚠{overdue_n}</span>'
@@ -398,7 +409,8 @@ def _board_html(conn) -> str:
         cols += (
             f'<div style="{_COL_STYLE}" {drop_attrs}>'
             f'<div style="font-weight:600;font-size:13px;color:{INK};margin-bottom:8px;">'
-            f'{label} <span style="color:{MUTED_LIGHT};font-weight:400;">({len(members)})</span>'
+            f'{html_render._swatch(_BOARD_COLUMN_COLOR.get(key))}{label} '
+            f'<span style="color:{MUTED_LIGHT};font-weight:400;">({len(members)})</span>'
             f'{overdue_badge}</div>'
             f'{cards}</div>'
         )
