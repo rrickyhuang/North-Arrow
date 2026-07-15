@@ -113,7 +113,11 @@ def refine(job: Job, cfg: dict) -> int | None:
     if data.get("status") != "OK":
         log.warning("Distance Matrix status %s for %s", data.get("status"), job.id)
         return None
-    element = data["rows"][0]["elements"][0]
+    try:
+        element = data["rows"][0]["elements"][0]
+    except (KeyError, IndexError):
+        log.warning("Malformed Distance Matrix response for %s", job.id)
+        return None
     if element.get("status") != "OK":
         return None  # e.g. ZERO_RESULTS — no transit route found
     return round(element["duration"]["value"] / 60)
