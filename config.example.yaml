@@ -151,6 +151,8 @@ dedup:
   source_priority:
     - vancouver_gov
     - municipal_taleo
+    - ubc_workday
+    - icbc
     - pibc
     - csla
     - jobbank
@@ -173,11 +175,31 @@ jobspy:
   # Doubles request volume per source — off by default.
   include_remote_pass: false
 
+# ── Open-web discovery (see .claude/skills/discover-jobs) ────────────────────
+# Seed/grow a journal of small firm career pages, niche boards, etc. that no
+# scraper covers. Findings route through the same pipeline as a manual add.
+discovery:
+  default_cadence_days: 14    # starting recheck interval stamped onto a newly-
+                               # added source; edit per-source in the journal
+                               # once you've seen how often it actually posts
+  max_new_sources_per_run: 2  # cap on new-source proposals per run (0 disables)
+
 # ── Enrichment ───────────────────────────────────────────────────────────────
 enrichment:
   model: "claude-haiku-4-5"
   max_description_chars: 8000
   enabled: true
+
+# ── Dead-link detection ──────────────────────────────────────────────────────
+# A confirmed HTTP check against a posting's URL (see linkcheck.py), distinct
+# from delivery.stale_after_days' "hasn't been re-listed" inference. Confirmed
+# dead postings drop into their own hidden "Posting removed" group in the
+# cockpit, same treatment as duplicates/dismissed — never re-checked again.
+link_check:
+  enabled: true
+  per_scrape_batch_size: 20    # postings checked automatically per scrape run
+  check_batch_size: 200        # postings checked by `scrape.py --check-links`
+  recheck_after_days: 7        # how long a confirmed-alive check is trusted
 
 # ── Delivery ─────────────────────────────────────────────────────────────────
 delivery:
@@ -194,6 +216,12 @@ delivery:
   # days with no forward movement gets a follow-up nudge on the cockpit's
   # pipeline board.
   follow_up_after_days: 7
+
+# ── Cover letters (coverletter.py) ───────────────────────────────────────────
+cover_letter:
+  # Soft cap enforced in the draft prompt and checked again in the critique
+  # pass. Optional — defaults to 500 if this whole section is omitted.
+  max_words: 500
 
 # ── Sources to run ───────────────────────────────────────────────────────────
 sources:
@@ -214,6 +242,8 @@ sources:
   jobbank: true            # Job Bank (jobbank.gc.ca), Government of Canada — national board
   bcjobs: true             # BCJobs.ca — hits its public JSON API directly
   eluta: false             # Eluta.ca — reCAPTCHA bot-wall after ~10 req/run; off by default, see source_eluta.py
+  ubc_workday: true        # UBC staff careers (Workday) — searched by keyword, board spans the whole university
+  icbc: true               # ICBC careers (SAP SuccessFactors, same template as vancouver_gov)
 
 # Direct firm careers pages to scrape, e.g.:
 #   - { name: "Some Studio", careers_url: "https://example.com/careers" }

@@ -7,14 +7,19 @@ Usage:
     python scrape.py --rescore             re-score stored jobs after a config/weights change (no scraping)
     python scrape.py --reenrich            force fresh Haiku enrichment on every stored job, then rescore
                                             (costs an API call per job — use after adding an enrichment field)
+    python scrape.py --reenrich-missing    enrich only jobs that never got enriched (e.g. an API outage/
+                                            billing lapse), leaving already-enriched jobs untouched — cheaper
+                                            than --reenrich when you're just backfilling failures
     python scrape.py --dedup               re-run cross-source duplicate detection only (no scraping)
+    python scrape.py --check-links         check a larger batch of postings for dead links only (no scraping)
     python scrape.py --all --dry-run       scrape + score, but write nothing and call no LLM;
                                             print a ranked preview of what a real run would store
     python scrape.py --backup              snapshot jobs.db to backups/ and exit
 
 Every --all/--source scrape re-runs dedup.py at the end automatically (so the
-DB stays clean without a separate step) and then snapshots jobs.db to backups/,
-giving application-tracking data (stages/notes) a rolling two-week safety net.
+DB stays clean without a separate step), checks a small batch of postings for
+dead links (see linkcheck.py), and then snapshots jobs.db to backups/, giving
+application-tracking data (stages/notes) a rolling two-week safety net.
 """
 from __future__ import annotations
 
@@ -27,14 +32,15 @@ import commute
 import scorer
 import enrichment
 import dedup
+import linkcheck
 import logutil
 from models import Job
 
 _ENRICH_FIELDS = (
     "has_design_autonomy", "has_mixed_role", "has_variety", "is_admin_heavy",
-    "is_drafting_only", "is_hierarchical", "skills_leverage", "autonomy_evidence",
-    "fit_summary", "seniority", "required_years", "required_credentials",
-    "qualification", "missing_requirements",
+    "is_drafting_only", "is_hierarchical", "has_values_alignment", "skills_leverage",
+    "autonomy_evidence", "fit_summary", "seniority", "required_years",
+    "required_credentials", "qualification", "missing_requirements",
 )
 from parsers.salary_cad import parse_salary
 from parsers.role_classifier import classify_role
@@ -50,7 +56,7 @@ from scrapers import (
     source_indeed, source_linkedin, source_pibc, source_csla, source_vancouver,
     source_municipal_taleo, source_north_shore, source_port_moody,
     source_coquitlam, source_concrete_cashmere, source_jobbank, source_eluta,
-    source_bcjobs,
+    source_bcjobs, source_ubc_workday, source_icbc,
 )
 
 SOURCES = {
@@ -62,11 +68,13 @@ SOURCES = {
     "indeed": source_indeed.fetch,       # via JobSpy — see scrapers/_jobspy_common.py
     "linkedin": source_linkedin.fetch,   # via JobSpy — see scrapers/_jobspy_common.py
     "vancouver_gov": source_vancouver.fetch,
-    "municipal_taleo": source_municipal_taleo.fetch,
+    "municipal_taleo": source_municipal_taleo.fetch,  # Burnaby/New West/Richmond + SFU
     "north_shore": source_north_shore.fetch,
     "port_moody": source_port_moody.fetch,
     "coquitlam": source_coquitlam.fetch,
     "concrete_cashmere": source_concrete_cashmere.fetch,
+    "ubc_workday": source_ubc_workday.fetch,
+    "icbc": source_icbc.fetch,
     # archinect / idealist / more firm_direct targets land in later phases
 }
 
@@ -161,10 +169,23 @@ def _maybe_enrich(conn, job: Job, cfg: dict, stats: dict, *, force: bool = False
         stats["enriched"] += 1
 
 
+def add_job(conn, raw: dict, cfg: dict, *, force_enrich: bool = False) -> Job:
+    """Run a single raw posting through the full pipeline: parse -> enrich -> score
+    -> store -> dedup. Shared by addjob.py (manual entries) and discover.py
+    (open-web discovery finds)."""
+    job = raw_to_job(raw, cfg)
+    _maybe_enrich(conn, job, cfg, {"enriched": 0}, force=force_enrich)
+    job.score, job.score_breakdown, job.disqualifier = scorer.score_job(job, cfg)
+    db.upsert(conn, job)
+    dedup.run(conn, cfg)
+    return job
+
+
 def run(sources: list[str], cfg: dict, *, dry_run: bool = False) -> dict:
     conn = db.connect()
     db.init_db(conn)
-    stats = {"fetched": 0, "new": 0, "updated": 0, "enriched": 0, "duplicates": 0}
+    stats = {"fetched": 0, "new": 0, "updated": 0, "enriched": 0, "duplicates": 0,
+              "links_checked": 0, "links_dead": 0}
     previews: list[tuple[bool, Job]] = []
     for name in sources:
         fetch = SOURCES.get(name)
@@ -195,6 +216,14 @@ def run(sources: list[str], cfg: dict, *, dry_run: bool = False) -> dict:
     if not dry_run:
         dedup_stats = dedup.run(conn, cfg)
         stats["duplicates"] = dedup_stats["duplicates"]
+        # Small batch per scrape, not the whole backlog — keeps a routine daily
+        # run from turning into hundreds of extra HTTP requests. --check-links
+        # runs a bigger batch on demand; see main().
+        link_cfg = cfg.get("link_check", {})
+        if link_cfg.get("enabled", True):
+            link_stats = linkcheck.run(conn, cfg, batch_size=link_cfg.get("per_scrape_batch_size", 20))
+            stats["links_checked"] = link_stats["checked"]
+            stats["links_dead"] = link_stats["dead"]
     conn.close()
     stats["previews"] = previews
     return stats
@@ -230,6 +259,29 @@ def reenrich(cfg: dict) -> dict:
             if data:
                 _apply_enrichment(job, data)
                 stats["enriched"] += 1
+        job.score, job.score_breakdown, job.disqualifier = scorer.score_job(job, cfg)
+        db.upsert(conn, job)
+    conn.close()
+    return stats
+
+
+def reenrich_missing(cfg: dict) -> dict:
+    """Enrich only stored jobs that never got enriched at all (e.g. ones that
+    landed during an API outage or billing lapse), leaving already-enriched
+    jobs untouched. Cheaper than --reenrich when the goal is just backfilling
+    failures rather than refreshing everything after a prompt change."""
+    conn = db.connect()
+    db.init_db(conn)
+    jobs = [j for j in db.query(conn, include_dismissed=True) if not j.enriched]
+    stats = {"enriched": 0, "skipped": 0}
+    for job in jobs:
+        if not _should_enrich(job, cfg):
+            stats["skipped"] += 1
+            continue
+        data = enrichment.enrich(job, cfg)
+        if data:
+            _apply_enrichment(job, data)
+            stats["enriched"] += 1
         job.score, job.score_breakdown, job.disqualifier = scorer.score_job(job, cfg)
         db.upsert(conn, job)
     conn.close()
@@ -293,8 +345,14 @@ def main() -> None:
     ap.add_argument("--reenrich", action="store_true",
                     help="force fresh Haiku enrichment for every stored job, "
                          "then rescore (costs an API call per job)")
+    ap.add_argument("--reenrich-missing", action="store_true",
+                    help="enrich only jobs that never got enriched (e.g. an API outage), "
+                         "leaving already-enriched jobs untouched")
     ap.add_argument("--dedup", action="store_true",
                     help="re-run cross-source duplicate detection only (no scraping)")
+    ap.add_argument("--check-links", action="store_true",
+                    help="check a larger batch of postings for dead links only (no scraping); "
+                         "see link_check.check_batch_size in config.yaml")
     ap.add_argument("--digest", action="store_true",
                     help="build + deliver the digest after scraping")
     ap.add_argument("--dry-run", action="store_true",
@@ -322,6 +380,12 @@ def main() -> None:
         _refresh_html_report(cfg)
         return
 
+    if args.reenrich_missing:
+        stats = reenrich_missing(cfg)
+        log.info("enriched %(enriched)d previously-unenriched jobs (%(skipped)d skipped)", stats)
+        _refresh_html_report(cfg)
+        return
+
     if args.dedup:
         conn = db.connect()
         db.init_db(conn)
@@ -329,6 +393,17 @@ def main() -> None:
         conn.close()
         log.info("found %(groups)d duplicate group(s), marked %(duplicates)d "
                  "job(s) as duplicates", stats)
+        _refresh_html_report(cfg)
+        return
+
+    if args.check_links:
+        conn = db.connect()
+        db.init_db(conn)
+        link_cfg = cfg.get("link_check", {})
+        stats = linkcheck.run(conn, cfg, batch_size=link_cfg.get("check_batch_size", 200))
+        conn.close()
+        log.info("checked %(checked)d posting(s): %(dead)d confirmed dead, "
+                 "%(inconclusive)d inconclusive", stats)
         _refresh_html_report(cfg)
         return
 
@@ -348,7 +423,8 @@ def main() -> None:
 
     stats = run(sources, cfg)
     log.info("done: fetched=%(fetched)d new=%(new)d updated=%(updated)d "
-             "enriched=%(enriched)d duplicates=%(duplicates)d", stats)
+             "enriched=%(enriched)d duplicates=%(duplicates)d "
+             "links_checked=%(links_checked)d links_dead=%(links_dead)d", stats)
 
     if args.digest:
         import digest

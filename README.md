@@ -66,6 +66,13 @@ Dezeen (editorial RSS), Surrey (PeopleSoft login wall), BCSLA's own job board
 (rebranded SimplyHired, same Cloudflare wall as Indeed under a different
 skin), SimplyHired.ca direct (403).
 
+Beyond the fixed scrapers above, the `discover-jobs` Claude Code skill
+(`.claude/skills/discover-jobs/`) does on-demand open-web discovery — browsing
+small firm career pages and niche boards, checked against a self-growing,
+gitignored journal (`discovery_journal.json`). Anything found is presented for
+approval, then added through the same pipeline as `addjob.py` via `discover.py`.
+Run it interactively with `/discover-jobs`.
+
 ## Setup
 
 Requires Python 3.11+.
@@ -103,6 +110,7 @@ python scrape.py --source pibc     # one source
 python scrape.py --rescore         # re-rank stored jobs after a config change
 python scrape.py --reenrich        # force fresh Haiku enrichment on every stored job (backfill a new field)
 python scrape.py --dedup           # re-run cross-source duplicate detection only (auto-runs after every scrape anyway)
+python scrape.py --check-links     # check a larger batch of postings for dead links (a small batch auto-runs after every scrape anyway)
 python scrape.py --all --dry-run   # scrape + score but write nothing / call no LLM; ranked preview of what a real run would store
 
 python show.py                     # terminal ranked list
@@ -148,6 +156,7 @@ coverage yet for the LLM-enrichment calls or the live scrapers themselves.
 - `enrichment.py` — Claude Haiku call (fit signals + qualification verdict)
 - `scorer.py` — weighted scoring model
 - `dedup.py` — cross-source duplicate detection (fuzzy match via `rapidfuzz`)
+- `linkcheck.py` — confirms via a live HTTP request whether a posting's URL is still up; confirmed-dead postings drop into their own hidden cockpit group
 - `digest.py` — markdown + HTML email delivery
 - `html_render.py` — shared HTML for email, the static report, and the cockpit
 - `show.py` — read-only terminal/browser viewer

@@ -52,6 +52,30 @@ class Fetcher:
         if wait > 0:
             time.sleep(wait)
 
+    def post_json(self, url: str, json_body: dict) -> dict:
+        """POST a JSON body with throttle + backoff, returning the parsed JSON
+        response. For APIs like Workday's ``/wday/cxs/...`` search endpoint
+        that don't accept a plain GET."""
+        last_exc: Exception | None = None
+        for attempt in range(1, self.retries + 1):
+            self._throttle()
+            try:
+                resp = self.session.post(url, json=json_body, timeout=self.timeout)
+                self._last = time.time()
+                if resp.status_code in (403, 429) or resp.status_code >= 500:
+                    last_exc = requests.HTTPError(f"{resp.status_code} for {resp.url}")
+                    log.warning("attempt %d: HTTP %d for %s", attempt,
+                                resp.status_code, resp.url)
+                    time.sleep(2 ** attempt)
+                    continue
+                resp.raise_for_status()
+                return resp.json()
+            except requests.RequestException as e:
+                last_exc = e
+                log.warning("attempt %d failed for POST %s: %s", attempt, url, e)
+                time.sleep(2 ** attempt)
+        raise last_exc or requests.HTTPError(f"failed to POST {url}")
+
     def get(self, url: str, params: dict | None = None) -> str:
         """GET with throttle + backoff. Raises BlockedError on a detected wall,
         or requests.HTTPError after exhausting retries."""

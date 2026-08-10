@@ -116,6 +116,14 @@ class Job:
     # across cover-letter drafts/revisions. None until fetched.
     company_research: str | None = None
 
+    # ── Posting liveness ─────────────────────────────────────────────────────
+    # Confirmed via a real HTTP request against `url` (see linkcheck.py) —
+    # distinct from html_render.is_stale's "haven't been re-listed in N days"
+    # inference. False/None until a check has actually run; a confirmed-dead
+    # posting is never re-checked (a taken-down listing doesn't come back).
+    link_dead: bool = False
+    link_checked_at: datetime | None = None
+
     # ── Cross-source dedup ───────────────────────────────────────────────────
     # Set by dedup.py when this job is judged a re-post of another job (e.g. the
     # same posting scraped via an aggregator AND its originating org's own

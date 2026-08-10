@@ -5,6 +5,8 @@
 config.yaml
 # in case the profile is ever split into its own file
 profile.yaml
+# open-web discovery journal — personal source list, grows over time
+discovery_journal.json
 
 # ── Claude Code local settings (machine-specific) ──
 .claude/settings.local.json

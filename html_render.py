@@ -11,6 +11,8 @@ import html
 import re
 from datetime import date, datetime, timezone
 
+import coverletter
+
 # ── North Arrow brand ────────────────────────────────────────────────────
 # Single locked-in scheme (navy/cyanotype-blueprint) — deliberately no light
 # variant and no theme-switching. Structural/chrome colors — headings,
@@ -398,6 +400,10 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
         dq += (f'<div style="margin-top:6px;"><span style="background:{MUTED};color:#fff;'
                f'font-size:11px;padding:2px 8px;white-space:nowrap;">'
                f'duplicate posting</span></div>')
+    if job.link_dead:
+        dq += (f'<div style="margin-top:6px;"><span style="background:{_STAGE_COLOR["denied"]};color:#fff;'
+               f'font-size:11px;padding:2px 8px;white-space:nowrap;">'
+               f'posting removed — link confirmed dead</span></div>')
     stale = report and is_stale(job, stale_days)
     if stale:
         dq += (f'<div style="margin-top:6px;"><span style="background:{_QUAL_COLOR["stretch"]};color:#fff;'
@@ -408,7 +414,7 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
     data = ""
     if report:
         searchable = _esc(" ".join(filter(None, [
-            job.title, job.company, job.role_type, job.description])).lower())
+            job.id, job.title, job.company, job.role_type, job.description])).lower())
         data = (f' class="job-card" data-search="{searchable}" '
                 f'data-source="{_esc(job.source)}" data-role="{_esc(job.role_type or "")}" '
                 f'data-qual="{_esc(job.qualification or "")}" '
@@ -416,7 +422,8 @@ def job_card(job, rank: int | None = None, *, full_desc: bool = False,
                 f'data-dq="{1 if job.disqualifier else 0}" '
                 f'data-dup="{1 if job.duplicate_of else 0}" '
                 f'data-dismissed="{1 if job.dismissed else 0}" '
-                f'data-stale="{1 if stale else 0}" data-score="{job.score:.4f}"')
+                f'data-stale="{1 if stale else 0}" '
+                f'data-dead="{1 if job.link_dead else 0}" data-score="{job.score:.4f}"')
     id_attr = f' id="{_esc(dom_id)}"' if dom_id else ""
 
     return (
@@ -670,6 +677,8 @@ def _filter_bar(jobs: list) -> str:
         f'<label style="font-size:13px;color:{MUTED};display:flex;align-items:center;gap:4px;">'
         f'<input type="checkbox" id="fstale" onchange="applyFilters()" style="accent-color:{BLUEPRINT_BRIGHT};"> show stale</label>'
         f'<label style="font-size:13px;color:{MUTED};display:flex;align-items:center;gap:4px;">'
+        f'<input type="checkbox" id="fdead" onchange="applyFilters()" style="accent-color:{BLUEPRINT_BRIGHT};"> show removed</label>'
+        f'<label style="font-size:13px;color:{MUTED};display:flex;align-items:center;gap:4px;">'
         f'<input type="checkbox" id="fdismissed" onchange="applyFilters()" style="accent-color:{BLUEPRINT_BRIGHT};"> show dismissed</label>'
         f'<label style="font-size:13px;color:{MUTED};display:flex;align-items:center;gap:4px;">'
         f'<input type="checkbox" id="fstaged" onchange="applyFilters()" style="accent-color:{BLUEPRINT_BRIGHT};"> show in pipeline</label>'
@@ -688,6 +697,7 @@ function applyFilters(){
   var showdq=document.getElementById('fdq').checked;
   var showdup=document.getElementById('fdup').checked;
   var showstale=document.getElementById('fstale').checked;
+  var showdead=document.getElementById('fdead').checked;
   var showdismissed=document.getElementById('fdismissed').checked;
   var showstaged=document.getElementById('fstaged').checked;
   var n=0;
@@ -702,6 +712,7 @@ function applyFilters(){
     if(!showdq && c.dataset.dq==='1') ok=false;
     if(!showdup && c.dataset.dup==='1') ok=false;
     if(!showstale && c.dataset.stale==='1') ok=false;
+    if(!showdead && c.dataset.dead==='1') ok=false;
     if(!showdismissed && c.dataset.dismissed==='1') ok=false;
     c.style.display = ok ? '' : 'none';
     if(ok) n++;
@@ -727,12 +738,14 @@ document.addEventListener('htmx:afterSettle', applyFilters);
 def report_html(jobs: list, cfg: dict) -> str:
     stale_days = cfg.get("delivery", {}).get("stale_after_days", STALE_AFTER_DAYS)
     live = [j for j in jobs if not j.disqualifier and not j.duplicate_of]
-    dead = len([j for j in jobs if j.disqualifier])
+    disqualified = len([j for j in jobs if j.disqualifier])
     dup = len([j for j in jobs if j.duplicate_of])
     stale = len([j for j in jobs if is_stale(j, stale_days)])
-    intro = (f"{len(live)} scored · {dead} disqualified · {dup} duplicates · {stale} stale "
-             f"— search and filter below; disqualified/duplicates/stale/dismissed/in-pipeline hidden "
-             f"until you toggle them on")
+    removed = len([j for j in jobs if j.link_dead])
+    intro = (f"{len(live)} scored · {disqualified} disqualified · {dup} duplicates · "
+             f"{stale} stale · {removed} removed "
+             f"— search and filter below; disqualified/duplicates/stale/removed/dismissed/"
+             f"in-pipeline hidden until you toggle them on")
     row_of = {j.id: i for i, j in enumerate(jobs, 1)}
     card_fn = lambda j: job_card(
         j, row_of[j.id], full_desc=True, report=True, row_no=row_of[j.id], stale_days=stale_days)
@@ -765,17 +778,23 @@ def _first_seen_after(job, cutoff: datetime | None) -> bool:
     return seen > cutoff
 
 
-def job_matches_filter(job, *, q: str = "", source: str = "", quals: list[str] | None = None) -> bool:
-    """Search/source/fit filters, applied server-side against the full job
-    list (see serve.py's /cards) instead of hiding pre-rendered DOM nodes.
-    `q` and `source` are expected pre-lowered/pre-stripped by the caller."""
+def job_matches_filter(job, *, q: str = "", source: str = "", quals: list[str] | None = None,
+                       has_letter: bool = False) -> bool:
+    """Search/source/fit/cover-letter filters, applied server-side against the
+    full job list (see serve.py's /cards) instead of hiding pre-rendered DOM
+    nodes. `q` and `source` are expected pre-lowered/pre-stripped by the
+    caller. `has_letter` narrows to jobs with a drafted cover letter on disk —
+    checked via a filesystem stat, not a DB column, since coverletter.py owns
+    that file as the source of truth."""
     if q:
-        searchable = " ".join(filter(None, [job.title, job.company, job.role_type, job.description])).lower()
+        searchable = " ".join(filter(None, [job.id, job.title, job.company, job.role_type, job.description])).lower()
         if q not in searchable:
             return False
     if source and job.source != source:
         return False
     if quals and (job.qualification or "") not in quals:
+        return False
+    if has_letter and not coverletter.letter_path(job).exists():
         return False
     return True
 
@@ -802,7 +821,7 @@ def inbox_partition(jobs: list, stale_days: int = STALE_AFTER_DAYS, *,
     the groups stay mutually exclusive and exhaustive. A saved job outranks
     every noise bucket — a job you explicitly flagged is never hidden."""
     saved, new, backlog = [], [], []
-    screened, dupes, dismissed_, stale_ = [], [], [], []
+    screened, dupes, dismissed_, dead_, stale_ = [], [], [], [], []
     pipeline = []
     for j in jobs:
         if j.stage:
@@ -815,6 +834,8 @@ def inbox_partition(jobs: list, stale_days: int = STALE_AFTER_DAYS, *,
             dupes.append(j)
         elif j.dismissed:
             dismissed_.append(j)
+        elif j.link_dead:
+            dead_.append(j)
         elif is_stale(j, stale_days):
             stale_.append(j)
         elif _first_seen_after(j, new_since):
@@ -830,6 +851,7 @@ def inbox_partition(jobs: list, stale_days: int = STALE_AFTER_DAYS, *,
         ("Screened out", screened),
         ("Duplicates", dupes),
         ("Dismissed", dismissed_),
+        ("Posting removed", dead_),
         ("Likely closed (stale)", stale_),
     ) if g[1]]
     return queue_groups, noise_groups, pipeline
@@ -846,6 +868,7 @@ _INBOX_GROUP_COLOR = {
     "Screened out": _STAGE_COLOR["denied"],
     "Duplicates": MUTED,
     "Dismissed": MUTED,
+    "Posting removed": _STAGE_COLOR["denied"],
     "Likely closed (stale)": _QUAL_COLOR["stretch"],
 }
 
@@ -877,6 +900,7 @@ _PAGINATED_GROUP_SLUGS = {
     "Screened out": "screened",
     "Duplicates": "duplicates",
     "Dismissed": "dismissed",
+    "Posting removed": "dead",
     "Likely closed (stale)": "stale",
 }
 
@@ -937,6 +961,7 @@ def inbox_controls(jobs: list, *, new_count: int, queue_count: int,
     source_val = f.get("source", "")
     quals_on = set(f.get("quals") or [])
     show_all_on = bool(f.get("show_all"))
+    has_letter_on = bool(f.get("has_letter"))
 
     sources = sorted({j.source for j in jobs if j.source})
     src_opts = "".join(
@@ -973,6 +998,9 @@ def inbox_controls(jobs: list, *, new_count: int, queue_count: int,
         f'<span style="font-size:12px;color:{MUTED};">Fit:</span>{chips}'
         f'<select id="fsource" style="{_INPUT_STYLE}">'
         f'<option value="">source: all</option>{src_opts}</select>'
+        f'<label style="font-size:13px;color:{MUTED};display:flex;align-items:center;gap:4px;">'
+        f'<input type="checkbox" id="fletter" {"checked" if has_letter_on else ""} '
+        f'style="accent-color:{BLUEPRINT_BRIGHT};"> Has cover letter</label>'
         f'<label title="Reveals screened-out (disqualified), duplicate, dismissed, '
         f'and stale (not seen recently) postings — hidden by default since none '
         f'of them need a decision from you." '
@@ -993,6 +1021,7 @@ function cardsQS(){
   var src = document.getElementById('fsource').value;
   if (src) p.set('source', src);
   document.querySelectorAll('.qchip[data-on="1"]').forEach(function(c){ p.append('qual', c.dataset.qual); });
+  if (document.getElementById('fletter').checked) p.set('has_letter', '1');
   if (document.getElementById('fall').checked) p.set('show_all', '1');
   return p.toString();
 }
@@ -1014,6 +1043,7 @@ document.getElementById('q').addEventListener('input', function(){
   _qTimer = setTimeout(reloadCards, 400);
 });
 document.getElementById('fsource').addEventListener('change', reloadCards);
+document.getElementById('fletter').addEventListener('change', reloadCards);
 document.getElementById('fall').addEventListener('change', reloadCards);
 // A card swapped in via HTMX (stage/dismiss button) that no longer belongs on
 // the list — staged (the pipeline board owns it now) or dismissed while

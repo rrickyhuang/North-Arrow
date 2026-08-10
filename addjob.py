@@ -14,9 +14,7 @@ import time
 
 import config
 import db
-import dedup
-import scorer
-from scrape import raw_to_job, _maybe_enrich
+from scrape import add_job
 
 SOURCE = "manual"
 
@@ -70,11 +68,7 @@ def _resolve_job(conn, target: str):
 
 
 def _save(conn, raw: dict, cfg: dict, *, force_enrich: bool) -> None:
-    job = raw_to_job(raw, cfg)
-    _maybe_enrich(conn, job, cfg, {"enriched": 0}, force=force_enrich)
-    job.score, job.score_breakdown, job.disqualifier = scorer.score_job(job, cfg)
-    db.upsert(conn, job)
-    dedup.run(conn, cfg)
+    job = add_job(conn, raw, cfg, force_enrich=force_enrich)
 
     print(f"\n  Saved. score={job.score:.2f}"
           f"{'  DISQUALIFIED: ' + job.disqualifier if job.disqualifier else ''}")

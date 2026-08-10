@@ -94,3 +94,41 @@ def test_set_duplicate_clears_with_none(conn):
     assert db.get(conn, a.id).duplicate_of == b.id
     db.set_duplicate(conn, a.id, None)
     assert db.get(conn, a.id).duplicate_of is None
+
+
+def test_set_link_dead_stamps_checked_at(conn):
+    job = make_job()
+    db.upsert(conn, job)
+    db.set_link_dead(conn, job.id, True)
+    fetched = db.get(conn, job.id)
+    assert fetched.link_dead is True
+    assert fetched.link_checked_at is not None
+
+
+def test_set_link_dead_false_still_stamps_checked_at(conn):
+    """A confirmed-alive result must still update link_checked_at — otherwise
+    linkcheck.py would re-check the same job every single run."""
+    job = make_job()
+    db.upsert(conn, job)
+    db.set_link_dead(conn, job.id, False)
+    fetched = db.get(conn, job.id)
+    assert fetched.link_dead is False
+    assert fetched.link_checked_at is not None
+
+
+def test_upsert_preserves_link_dead_on_rescrape(conn):
+    """A re-scrape rebuilds the Job from the raw posting, which knows nothing
+    about a prior link check — link_dead/link_checked_at must be protected the
+    same way first_seen_at/saved/etc. are, or every re-scrape would silently
+    un-flag a confirmed-dead posting."""
+    job = make_job()
+    db.upsert(conn, job)
+    db.set_link_dead(conn, job.id, True)
+    checked_at = db.get(conn, job.id).link_checked_at
+
+    rescraped = make_job(source=job.source, external_id=job.external_id)
+    db.upsert(conn, rescraped)
+
+    fetched = db.get(conn, job.id)
+    assert fetched.link_dead is True
+    assert fetched.link_checked_at == checked_at

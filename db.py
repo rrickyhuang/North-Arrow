@@ -21,11 +21,11 @@ DB_PATH = Path(__file__).with_name("jobs.db")
 # Fields that need JSON or ISO encoding rather than raw scalar storage.
 _JSON_FIELDS = {"skills_leverage", "score_breakdown",
                 "required_credentials", "missing_requirements"}
-_DATETIME_FIELDS = {"posted_at", "scraped_at", "first_seen_at", "stage_at"}
+_DATETIME_FIELDS = {"posted_at", "scraped_at", "first_seen_at", "stage_at", "link_checked_at"}
 _BOOL_FIELDS = {
     "is_remote", "has_design_autonomy", "has_mixed_role", "has_variety",
     "is_admin_heavy", "is_drafting_only", "is_hierarchical", "has_values_alignment",
-    "enriched", "is_new", "seen", "saved", "dismissed",
+    "enriched", "is_new", "seen", "saved", "dismissed", "link_dead",
 }
 
 SCHEMA = """
@@ -82,7 +82,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     stage_at            TEXT,
     notes               TEXT NOT NULL DEFAULT '',
     duplicate_of        TEXT,
-    company_research    TEXT
+    company_research    TEXT,
+    link_dead           INTEGER,
+    link_checked_at     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_score ON jobs(score DESC);
 CREATE INDEX IF NOT EXISTS idx_jobs_new ON jobs(is_new);
@@ -153,6 +155,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "company_research": "TEXT",
         "first_seen_at": "TEXT",
         "has_values_alignment": "INTEGER",
+        "link_dead": "INTEGER",
+        "link_checked_at": "TEXT",
     }
     stage_is_new = "stage" not in existing
     first_seen_is_new = "first_seen_at" not in existing
@@ -231,7 +235,7 @@ def upsert(conn: sqlite3.Connection, job: Job) -> bool:
     # can change on re-scrape without that verdict needing to be recomputed.
     protected = {"id", "seen", "saved", "dismissed", "is_new", "stage", "stage_at",
                  "notes", "duplicate_of", "commute_min_precise", "company_research",
-                 "first_seen_at"}
+                 "first_seen_at", "link_dead", "link_checked_at"}
     updates = {k: v for k, v in data.items() if k not in protected}
     set_clause = ", ".join(f"{k} = :{k}" for k in updates)
     updates["id"] = job.id
@@ -330,6 +334,19 @@ def set_notes(conn: sqlite3.Connection, job_id: str, notes: str) -> None:
     conn.execute(
         "UPDATE jobs SET notes = ? WHERE id = ?",
         (notes or "", job_id),
+    )
+    conn.commit()
+
+
+def set_link_dead(conn: sqlite3.Connection, job_id: str, dead: bool) -> None:
+    """Record a live HTTP check result for a job's posting URL, stamping
+    link_checked_at with now. See models.Job.link_dead/link_checked_at and
+    linkcheck.py — called for both outcomes (dead AND confirmed-alive) so a
+    confirmed-alive job isn't re-checked again until its recheck interval
+    passes."""
+    conn.execute(
+        "UPDATE jobs SET link_dead = ?, link_checked_at = ? WHERE id = ?",
+        (int(bool(dead)), datetime.now(timezone.utc).isoformat(), job_id),
     )
     conn.commit()
 

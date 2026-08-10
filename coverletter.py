@@ -37,10 +37,15 @@ from pathlib import Path
 import company_research
 import config
 import db
+import promptcommon
 from enrichment import _profile_block
 
 _OUT_DIR = Path(__file__).with_name("digests") / "cover_letters"
 _BAK_DIR = _OUT_DIR / "backups"
+
+# Overridable via config.yaml's cover_letter.max_words; most application
+# forms and reasonable readers cap out well before this.
+_DEFAULT_MAX_WORDS = 500
 
 
 def _resolve_job(conn, target: str):
@@ -55,27 +60,9 @@ def _resolve_job(conn, target: str):
 
 def build_prompt(job, cfg: dict, notes: str = "") -> str:
     profile = cfg.get("profile", {})
-    context_lines = []
-    if job.company_research:
-        context_lines.append(f"Company research: {job.company_research}")
-    if job.fit_summary:
-        context_lines.append(f"Fit assessment: {job.fit_summary}")
-    if job.autonomy_evidence:
-        context_lines.append(f"Design-autonomy evidence in the posting: {job.autonomy_evidence}")
-    if job.missing_requirements:
-        context_lines.append(f"Areas where the candidate is light (for your awareness only — "
-                              f"do NOT mention, concede, or apologize for these in the letter; "
-                              f"just don't claim strength the candidate lacks): "
-                              f"{'; '.join(job.missing_requirements)}")
-    context = "\n".join(context_lines)
-
-    notes_block = (
-        f"\n=== CANDIDATE'S NOTES FOR THIS SPECIFIC APPLICATION ===\n"
-        f"The candidate asked specifically for these points/experiences to be "
-        f"worked into this letter — prioritize them over anything you'd "
-        f"otherwise pick from the general profile:\n\n{notes.strip()}\n"
-        if notes.strip() else ""
-    )
+    context = promptcommon.context_block(job, "letter")
+    notes_block = promptcommon.notes_block(notes, "letter")
+    max_words = cfg.get("cover_letter", {}).get("max_words", _DEFAULT_MAX_WORDS)
 
     sample = (profile.get("writing_sample") or "").strip()
     voice_block = (
@@ -116,17 +103,17 @@ Description:
 
 === OTHER INSTRUCTIONS ===
 - Open with a proper salutation and end with a signature line ("Sincerely," + candidate name) — don't skip the greeting or the closing.
-- Roughly 3-4 paragraphs. Length and paragraphing should feel like the voice sample rather than hitting a fixed word count.
-- Do NOT proactively raise, name, or apologize for qualification gaps. Don't tell the reader what the posting is "looking for," and don't concede what the candidate lacks. Spend the space instead making a positive case built on the transferable experience the candidate DOES have — let the relevant strengths stand on their own without being framed against a gap. (Only address a gap directly if the candidate's notes explicitly ask you to.) Never narrate your own honesty about it — no "I want to be upfront/straightforward/honest", no "I'll be candid", no "I know the posting wants X, but...". A confident writer just makes the case; they don't announce a shortfall the reader hadn't raised.
+- Roughly 3-4 paragraphs, and no more than {max_words} words total. Let the voice sample shape the paragraphing rather than padding toward the cap, but stay under it.
+- {promptcommon.no_gap_concession()}
 - Do NOT offer to send, share, or attach a resume, portfolio, references, or work samples, and don't mention them at all — assume the resume and portfolio are already attached to the application. The closing should simply express interest in talking further and thank them for their time.
-- Write like a real, specific person, not a generic AI assistant. The voice sample is your guide for that. Avoid these tells: meta-commentary addressed to the reader about your own doubts or honesty; hedges like "more than you might expect" or "you might be wondering"; hollow openers like "In today's world/landscape"; and a closing paragraph that just restates everything already said.
+- {promptcommon.ai_tells(extra="; and a closing paragraph that just restates everything already said")}
 - Output ONLY the letter text (no subject line, no markdown headers, no commentary before/after)."""
 
 
 _CRITIQUE_PASS_SENTINEL = "NO CHANGES NEEDED"
 
 
-def build_critique_prompt(job, letter: str) -> str:
+def build_critique_prompt(job, letter: str, max_words: int = _DEFAULT_MAX_WORDS) -> str:
     return f"""You are a skeptical hiring manager reviewing a cover letter against the job posting it's responding to. Be specific and unsparing — this letter will be sent as-is unless you flag something.
 
 === JOB POSTING ===
@@ -143,6 +130,7 @@ Check for:
 - Keywords/requirements from the posting that the letter ignores despite the candidate plausibly having relevant experience for them.
 - Weak, generic, or boilerplate framing that could apply to any job/company.
 - Claims the letter makes that aren't grounded in anything the posting or the letter itself establishes (unverifiable or invented specifics).
+- Whether the letter runs noticeably over {max_words} words (count roughly; a small overage is fine, a clearly bloated letter is not).
 
 If the letter has none of these problems, respond with exactly "{_CRITIQUE_PASS_SENTINEL}" and nothing else.
 
@@ -168,8 +156,40 @@ def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")[:60]
 
 
+def _letter_filename_suffix(job) -> str:
+    return f"{_slug(job.company)}_{_slug(job.title)}_{job.id}.md"
+
+
 def _letter_path(job) -> Path:
-    return _OUT_DIR / f"{_slug(job.company)}_{_slug(job.title)}_{job.id}.md"
+    """Path to a job's letter file, prefixed with the date it was first
+    drafted so files sort chronologically in a file browser. The date is
+    fixed at first draft: an existing file (found by its job-id suffix, since
+    the date prefix isn't known in advance) is reused as-is on every
+    subsequent revision rather than being renamed to today's date.
+
+    Letters saved before this dated-filename scheme existed are migrated in
+    place the first time they're looked up — renamed to add a date prefix
+    (the file's last-modified date, which is what its own "Drafted:" header
+    line already shows, since that's rewritten on every save)."""
+    suffix = _letter_filename_suffix(job)
+    dated = sorted(_OUT_DIR.glob(f"*_{suffix}"))
+    if dated:
+        return dated[0]
+    legacy = _OUT_DIR / suffix
+    if legacy.exists():
+        stamp = datetime.fromtimestamp(legacy.stat().st_mtime).strftime("%Y-%m-%d")
+        migrated = _OUT_DIR / f"{stamp}_{suffix}"
+        try:
+            legacy.rename(migrated)
+        except FileNotFoundError:
+            # Another concurrent call already migrated it — reuse whatever
+            # dated file resulted instead of racing on the rename.
+            dated = sorted(_OUT_DIR.glob(f"*_{suffix}"))
+            if dated:
+                return dated[0]
+            raise
+        return migrated
+    return _OUT_DIR / f"{date.today().strftime('%Y-%m-%d')}_{suffix}"
 
 
 # Divides the job-info header from the letter body in a saved .md. Revisions
@@ -282,9 +302,10 @@ def draft_letter(job, cfg: dict, notes: str = "") -> Path:
     company_research.get_or_research(conn, job)
     conn.close()
 
+    max_words = cfg.get("cover_letter", {}).get("max_words", _DEFAULT_MAX_WORDS)
     letter = run_claude(build_prompt(job, cfg, notes))
     try:
-        critique = run_claude(build_critique_prompt(job, letter))
+        critique = run_claude(build_critique_prompt(job, letter, max_words))
     except CoverLetterError:
         critique = _CRITIQUE_PASS_SENTINEL
     if _CRITIQUE_PASS_SENTINEL not in critique.upper():

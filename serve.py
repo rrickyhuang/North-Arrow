@@ -24,6 +24,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Flask, abort, make_response, request
 from markupsafe import escape
 
+import appquestions
 import config
 import coverletter
 import db
@@ -185,6 +186,12 @@ def _actions_html(job) -> str:
               f'hx-get="/job/{job.id}/coverletter" hx-target="#cl-{job.id}" '
               f'hx-swap="innerHTML">{cl_label}</button>')
 
+    num_answers = len(appquestions.list_answers(job))
+    aq_label = f"✓ App Qs ({num_answers})" if num_answers else "App Qs"
+    aq_btn = (f'<button style="{_BTN_ON if num_answers else _BTN}" '
+              f'hx-get="/job/{job.id}/appq" hx-target="#aq-{job.id}" '
+              f'hx-swap="innerHTML">{aq_label}</button>')
+
     notes_html = (
         '<div style="margin-top:8px;">'
         f'<textarea name="notes" rows="2" placeholder="Notes: recruiter, dates, '
@@ -201,9 +208,10 @@ def _actions_html(job) -> str:
         '<span style="display:inline-block;width:12px;"></span>'
         f'{interested}{dismiss}'
         '<span style="display:inline-block;width:12px;"></span>'
-        f'{cl_btn}'
+        f'{cl_btn}{aq_btn}'
         f'{notes_html}'
-        f'<div id="cl-{job.id}"></div></div>'
+        f'<div id="cl-{job.id}"></div>'
+        f'<div id="aq-{job.id}"></div></div>'
     )
 
 
@@ -214,6 +222,35 @@ _CL_INPUT = (f"width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid
 _CL_WORKING = (f'<span class="htmx-indicator" style="color:{html_render._STAGE_COLOR["interviewing"]};font-size:12px;'
                'margin-left:8px;">working… (up to ~60s)</span>')
 
+# Pressing Enter alone submits the enclosing form (like a chat box); Shift+Enter
+# inserts a newline instead, for instruction fields long enough to need one.
+_ENTER_SUBMIT_KEYDOWN = (
+    "if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.form.requestSubmit();}"
+)
+
+
+def _working_and_cancel(form_id: str) -> str:
+    """The in-flight indicator plus a Cancel button that aborts *this*
+    form's pending request client-side, so the panel stops waiting and the
+    inputs are editable again immediately. Both share the htmx-indicator
+    class (visible only during the request); Cancel additionally carries
+    js-cancel so it's excluded from hx-disabled-elt and stays clickable
+    while every other button in the form is disabled.
+
+    Note this only abandons the client-side wait — the `claude` CLI call
+    already running server-side keeps going to completion in the
+    background; its result is just discarded when it lands."""
+    # display:none/inline is toggled by the .htmx-indicator/.htmx-request
+    # stylesheet rule (see the shared <head> extras), but that only works if
+    # nothing else sets `display` inline — _BTN does, so it's stripped here
+    # rather than reused directly, or the button would stay visible always.
+    cancel_style = _BTN.replace("display:inline-block;", "") + "margin-left:4px;"
+    return (
+        f'{_CL_WORKING}'
+        f'<button type="button" class="htmx-indicator js-cancel" style="{cancel_style}" '
+        f'onclick="htmx.trigger(document.getElementById(\'{form_id}\'), \'htmx:abort\')">Cancel</button>'
+    )
+
 
 def _cl_close_btn(job) -> str:
     return (f'<button type="button" style="{_BTN}float:right;" '
@@ -221,22 +258,24 @@ def _cl_close_btn(job) -> str:
 
 
 def _cl_draft_form(job) -> str:
+    form_id = f"cl-draft-form-{job.id}"
     return (
         f'<div style="margin-top:10px;background:{PAPER};border:1px solid {GRID};'
         'padding:12px;">'
         f'{_cl_close_btn(job)}'
-        f'<form hx-post="/job/{job.id}/coverletter/draft" hx-target="#cl-{job.id}" '
-        f'hx-swap="innerHTML" hx-disabled-elt="find button">'
+        f'<form id="{form_id}" hx-post="/job/{job.id}/coverletter/draft" hx-target="#cl-{job.id}" '
+        f'hx-swap="innerHTML" hx-disabled-elt="find button:not(.js-cancel)">'
         f'<textarea name="notes" rows="2" placeholder="Optional: specific points '
         f'to work into this letter…" style="{_CL_INPUT}"></textarea>'
         f'<div style="margin-top:6px;"><button style="{_BTN_ON}">Draft cover letter'
-        f'</button>{_CL_WORKING}</div></form></div>'
+        f'</button>{_working_and_cancel(form_id)}</div></form></div>'
     )
 
 
 def _cl_view(job, body: str) -> str:
     from markupsafe import escape
     path = coverletter.letter_path(job)
+    form_id = f"cl-revise-form-{job.id}"
     return (
         f'<div style="margin-top:10px;background:{PAPER};border:1px solid {GRID};'
         'padding:12px;">'
@@ -244,15 +283,17 @@ def _cl_view(job, body: str) -> str:
         f'<div style="font-size:12px;color:{MUTED};margin-bottom:6px;">saved: '
         f'<code style="user-select:all;word-break:break-all;overflow-wrap:anywhere;">'
         f'{escape(str(path))}</code></div>'
-        f'<pre style="white-space:pre-wrap;font-family:{FONT_SANS};'
+        f'<pre id="cl-body-{job.id}" style="white-space:pre-wrap;font-family:{FONT_SANS};'
         f'font-size:13px;line-height:1.5;color:{INK};margin:0 0 10px;'
         f'max-height:420px;overflow:auto;">{escape(body)}</pre>'
-        f'<form hx-post="/job/{job.id}/coverletter/revise" hx-target="#cl-{job.id}" '
-        f'hx-swap="innerHTML" hx-disabled-elt="find button">'
-        f'<input name="instruction" placeholder="Describe a change to make…" '
-        f'style="{_CL_INPUT}">'
+        f'{_copy_btn(f"cl-body-{job.id}")}'
+        f'<form id="{form_id}" hx-post="/job/{job.id}/coverletter/revise" hx-target="#cl-{job.id}" '
+        f'hx-swap="innerHTML" hx-disabled-elt="find button:not(.js-cancel)">'
+        f'<textarea name="instruction" rows="1" placeholder="Describe a change to make… '
+        f'(Shift+Enter for a new line)" onkeydown="{_ENTER_SUBMIT_KEYDOWN}" '
+        f'style="{_CL_INPUT}"></textarea>'
         f'<div style="margin-top:6px;"><button style="{_BTN_ON}">Revise</button>'
-        f'{_CL_WORKING}</div></form></div>'
+        f'{_working_and_cancel(form_id)}</div></form></div>'
     )
 
 
@@ -263,6 +304,80 @@ def _cl_panel(job, error: str = "") -> str:
               f'{escape(error)}</div>') if error else ""
     body = coverletter.letter_body(job)
     return banner + (_cl_view(job, body) if body is not None else _cl_draft_form(job))
+
+
+# ── Application-question panel (lazily loaded into #aq-<id> on demand) ───────
+# Same idea as the cover-letter panel, but a job can have any number of these,
+# so the panel shows every saved Q&A (each independently revisable/deletable)
+# plus one form for adding the next question.
+def _aq_close_btn(job) -> str:
+    return (f'<button type="button" style="{_BTN}float:right;" '
+            f'onclick="document.getElementById(\'aq-{job.id}\').innerHTML=\'\'">Hide</button>')
+
+
+_COPY_JS = (
+    "var t=document.getElementById('{el_id}').textContent;"
+    "navigator.clipboard.writeText(t);"
+    "var b=this;var prev=b.textContent;b.textContent='Copied ✓';"
+    "setTimeout(function(){{b.textContent=prev;}},1500);"
+)
+
+
+def _copy_btn(el_id: str) -> str:
+    return (f'<button type="button" style="{_BTN}" '
+            f'onclick="{_COPY_JS.format(el_id=el_id)}">Copy</button>')
+
+
+def _aq_qa_block(job, qa) -> str:
+    copy_btn = _copy_btn(f"aq-ans-{qa.id}")
+    form_id = f"aq-revise-form-{qa.id}"
+    return (
+        f'<div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid {GRID_FAINT};">'
+        f'<div style="font-weight:600;font-size:13px;margin-bottom:4px;">{escape(qa.question)}</div>'
+        f'<pre id="aq-ans-{qa.id}" style="white-space:pre-wrap;font-family:{FONT_SANS};font-size:13px;'
+        f'line-height:1.5;color:{INK};margin:0 0 8px;max-height:300px;overflow:auto;">'
+        f'{escape(qa.answer)}</pre>'
+        f'{copy_btn}'
+        f'<form id="{form_id}" hx-post="/job/{job.id}/appq/{qa.id}/revise" hx-target="#aq-{job.id}" '
+        f'hx-swap="innerHTML" hx-disabled-elt="find button:not(.js-cancel)">'
+        f'<textarea name="instruction" rows="1" placeholder="Describe a change to make… '
+        f'(Shift+Enter for a new line)" onkeydown="{_ENTER_SUBMIT_KEYDOWN}" '
+        f'style="{_CL_INPUT}"></textarea>'
+        f'<div style="margin-top:6px;">'
+        f'<button style="{_BTN_ON}">Revise</button>{_working_and_cancel(form_id)} '
+        f'<button type="button" style="{_BTN}" hx-post="/job/{job.id}/appq/{qa.id}/delete" '
+        f'hx-target="#aq-{job.id}" hx-swap="innerHTML" hx-confirm="Delete this answer?">Delete</button>'
+        f'</div></form></div>'
+    )
+
+
+def _aq_add_form(job) -> str:
+    form_id = f"aq-draft-form-{job.id}"
+    return (
+        f'<form id="{form_id}" hx-post="/job/{job.id}/appq/draft" hx-target="#aq-{job.id}" '
+        f'hx-swap="innerHTML" hx-disabled-elt="find button:not(.js-cancel)">'
+        f'<textarea name="question" rows="2" placeholder="Paste the application question…" '
+        f'style="{_CL_INPUT}" required></textarea>'
+        f'<textarea name="notes" rows="2" placeholder="Optional: specific points to work in…" '
+        f'style="{_CL_INPUT}margin-top:6px;"></textarea>'
+        f'<input name="limit" placeholder="Optional: word/character limit (e.g. 500 words)" '
+        f'style="{_CL_INPUT}margin-top:6px;">'
+        f'<div style="margin-top:6px;"><button style="{_BTN_ON}">Draft answer</button>'
+        f'{_working_and_cancel(form_id)}</div>'
+        f'</form>'
+    )
+
+
+def _aq_panel(job, error: str = "") -> str:
+    banner = (f'<div style="margin-bottom:10px;background:{ERROR_BG};border:1px solid '
+              f'{ERROR_BORDER};padding:10px;color:{html_render._STAGE_COLOR["denied"]};font-size:13px;">'
+              f'{escape(error)}</div>') if error else ""
+    qas = appquestions.list_answers(job)
+    blocks = "".join(_aq_qa_block(job, qa) for qa in qas)
+    return (
+        f'<div style="margin-top:10px;background:{PAPER};border:1px solid {GRID};padding:12px;">'
+        f'{_aq_close_btn(job)}{banner}{blocks}{_aq_add_form(job)}</div>'
+    )
 
 
 def _stale_days() -> int:
@@ -323,6 +438,7 @@ def _parse_filters() -> dict:
         "q": request.args.get("q", "").strip().lower(),
         "source": request.args.get("source", "").strip(),
         "quals": [q for q in request.args.getlist("qual") if q],
+        "has_letter": request.args.get("has_letter", "") in ("1", "true", "on"),
         "show_all": request.args.get("show_all", "") in ("1", "true", "on"),
     }
 
@@ -335,6 +451,8 @@ def _filters_qs(filters: dict) -> str:
     if filters["source"]:
         parts.append(("source", filters["source"]))
     parts.extend(("qual", q) for q in filters["quals"])
+    if filters["has_letter"]:
+        parts.append(("has_letter", "1"))
     if filters["show_all"]:
         parts.append(("show_all", "1"))
     return urlencode(parts)
@@ -345,7 +463,8 @@ def _filtered_groups(jobs: list, filters: dict, new_since):
     groups come back empty unless show_all is set — no point computing HTML
     for jobs the view won't render at all."""
     filtered = [j for j in jobs if html_render.job_matches_filter(
-        j, q=filters["q"], source=filters["source"], quals=filters["quals"])]
+        j, q=filters["q"], source=filters["source"], quals=filters["quals"],
+        has_letter=filters["has_letter"])]
     queue_groups, noise_groups, pipeline = html_render.inbox_partition(
         filtered, _stale_days(), new_since=new_since)
     if not filters["show_all"]:
@@ -424,7 +543,8 @@ def _board_card(job, followup_days: int) -> str:
         f'style="background:{PAPER_RAISED};{border}border-left:3px solid {qual_color};cursor:grab;'
         'padding:9px 9px 9px 8px;margin-bottom:9px;">'
         f'<div style="font-size:14px;font-weight:600;line-height:1.3;">'
-        f'<a href="{escape(job.url)}" style="color:{BLUEPRINT_BRIGHT};text-decoration:none;">'
+        f'<a href="{escape(job.url)}" target="_blank" rel="noopener" '
+        f'style="color:{BLUEPRINT_BRIGHT};text-decoration:none;">'
         f'{escape(job.title)}</a></div>'
         f'<div style="color:{MUTED};font-size:12px;margin:1px 0 6px;">'
         f'{escape(job.company or "Unknown")}{since}</div>'
@@ -746,6 +866,59 @@ def create_app(db_path=db.DB_PATH) -> Flask:
         log.info("revised cover letter for %s (%s @ %s): %s",
                  job_id, job.title, job.company, instruction)
         return _cl_panel(job)
+
+    @app.route("/job/<job_id>/appq")
+    def aq_panel_route(job_id):
+        conn = get_conn()
+        job = _job_or_404(conn, job_id)
+        conn.close()
+        return _aq_panel(job)
+
+    @app.route("/job/<job_id>/appq/draft", methods=["POST"])
+    def aq_draft(job_id):
+        conn = get_conn()
+        job = _job_or_404(conn, job_id)
+        conn.close()
+        question = request.form.get("question", "").strip()
+        if not question:
+            return _aq_panel(job)
+        notes = request.form.get("notes", "")
+        limit = request.form.get("limit", "")
+        try:
+            appquestions.draft_answer(job, config.load_config(), question, notes, limit)
+        except coverletter.CoverLetterError as e:
+            log.warning("app-question draft failed for %s: %s", job_id, e)
+            return _aq_panel(job, error=str(e))
+        log.info("drafted application answer for %s (%s @ %s): %s",
+                 job_id, job.title, job.company, question[:60])
+        return _aq_panel(job)
+
+    @app.route("/job/<job_id>/appq/<qa_id>/revise", methods=["POST"])
+    def aq_revise(job_id, qa_id):
+        conn = get_conn()
+        job = _job_or_404(conn, job_id)
+        conn.close()
+        instruction = request.form.get("instruction", "").strip()
+        if not instruction:
+            return _aq_panel(job)
+        try:
+            appquestions.revise_answer(job, qa_id, instruction)
+        except coverletter.CoverLetterError as e:
+            log.warning("app-question revise failed for %s/%s: %s", job_id, qa_id, e)
+            return _aq_panel(job, error=str(e))
+        log.info("revised application answer %s for %s (%s @ %s): %s",
+                 qa_id, job_id, job.title, job.company, instruction)
+        return _aq_panel(job)
+
+    @app.route("/job/<job_id>/appq/<qa_id>/delete", methods=["POST"])
+    def aq_delete(job_id, qa_id):
+        conn = get_conn()
+        job = _job_or_404(conn, job_id)
+        conn.close()
+        appquestions.delete_answer(job, qa_id)
+        log.info("deleted application answer %s for %s (%s @ %s)",
+                 qa_id, job_id, job.title, job.company)
+        return _aq_panel(job)
 
     return app
 

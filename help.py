@@ -13,6 +13,7 @@ import commute_precise
 import coverletter
 import dedup
 import digest
+import linkcheck
 import mark
 import scrape
 import show
@@ -25,6 +26,7 @@ _SCRIPTS = [
     ("coverletter.py", coverletter, "Draft a cover letter for any stored job via the claude CLI."),
     ("digest.py", digest, "Build/send the ranked shortlist without re-scraping."),
     ("dedup.py", dedup, "Cross-source duplicate detection (library module; run via `scrape.py --dedup`, auto-runs after every scrape)."),
+    ("linkcheck.py", linkcheck, "Confirms dead postings via a live HTTP check (library module; run via `scrape.py --check-links`, auto-runs after every scrape)."),
     ("commute_precise.py", commute_precise, "Optional real transit-time refinement for the digest shortlist (Google Distance Matrix)."),
 ]
 
