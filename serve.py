@@ -130,10 +130,24 @@ _BTN = (f"display:inline-block;padding:3px 9px;margin:0 4px 4px 0;"
         f"cursor:pointer;font-family:inherit;")
 _BTN_ON = _BTN + f"background:{BLUEPRINT_BRIGHT};color:#fff;border-color:{BLUEPRINT_BRIGHT};"
 
-# Shared <head> extras: htmx + the indicator CSS the cover-letter spinner uses.
+# Shared <head> extras: htmx + the indicator CSS the cover-letter spinner uses,
+# plus a visible banner for requests that never get a response — otherwise a
+# dead/restarted server (or a stale CSRF token from a pre-restart tab) just
+# looks like the button silently did nothing.
 _HEAD = ('<script src="https://unpkg.com/htmx.org@1.9.12"></script>'
          '<style>.htmx-indicator{display:none}'
-         '.htmx-request .htmx-indicator,.htmx-request.htmx-indicator{display:inline}</style>')
+         '.htmx-request .htmx-indicator,.htmx-request.htmx-indicator{display:inline}</style>'
+         '<div id="conn-error-banner" style="display:none;position:fixed;top:0;left:0;'
+         'right:0;z-index:9999;background:#b00020;color:#fff;padding:10px;'
+         'font-family:sans-serif;font-size:13px;text-align:center;">'
+         'Lost connection to the server — it may have stopped or restarted. '
+         'Reload the page before trying again.</div>'
+         '<script>(function(){'
+         'function show(){document.getElementById("conn-error-banner").style.display="block";}'
+         'document.addEventListener("htmx:sendError",show);'
+         'document.addEventListener("htmx:responseError",function(e){'
+         'if(e.detail.xhr.status===0){show();}});'
+         '})();</script>')
 
 # Board-only <head> extras: drag-and-drop to move a card between columns,
 # alongside (not instead of) the per-card move buttons — buttons still cover
