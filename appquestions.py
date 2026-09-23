@@ -153,7 +153,10 @@ def build_prompt(job, cfg: dict, question: str, notes: str = "", limit: str = ""
         if sample else ""
     )
 
-    return f"""Answer this specific application question for the candidate below, as if they were filling out the application themselves. Ground every claim in the candidate profile — do not invent employers, projects, or credentials that aren't stated.
+    return f"""=== THE QUESTION TO ANSWER ===
+{question.strip()}
+
+Answer this specific application question for the candidate below, as if they were filling out the application themselves. Everything after this point — the profile, the posting, the context — is material to answer THIS question with, not a general topic to write about. Ground every claim in the candidate profile — do not invent employers, projects, or credentials that aren't stated.
 
 === CANDIDATE PROFILE ===
 {_profile_block(profile)}
@@ -168,15 +171,14 @@ Description:
 === ADDITIONAL CONTEXT ===
 {context or "(none)"}
 {notes_block}{limit_block}
-=== THE QUESTION TO ANSWER ===
-{question.strip()}
-
 === INSTRUCTIONS ===
+- Before writing, silently identify in one sentence what this question is actually asking. Everything you write should serve answering that one thing — this is not an opportunity to summarize the candidate's whole background.
 - Answer in first person, directly and specifically — actually address what's being asked, not a generic statement about the candidate.
 - Back any claim with a brief, concrete detail from the profile rather than just restating the question's own language back at it.
 - {promptcommon.no_gap_concession()}
 - No greeting, salutation, or signature — this is a direct answer to a form field, not a letter.
 - {promptcommon.ai_tells()}
+- The question, one more time, so it's the last thing you read before writing: {question.strip()}
 - Output ONLY the answer text (no restated question, no markdown headers, no commentary before/after)."""
 
 
