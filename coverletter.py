@@ -268,12 +268,20 @@ class CoverLetterError(Exception):
     aren't a terminal (e.g. the web UI) catch this instead of exiting."""
 
 
+# Effort level passed to every `claude -p` call this module and appquestions.py
+# make (draft, critique, revision, trim) — lower trades depth for speed on
+# every pass, not just the initial draft, since critique/revision reuse the
+# same run_claude(). Bump back up to "medium"/"high" here if drafts start
+# missing things the critique pass used to catch.
+_CLAUDE_EFFORT = "low"
+
+
 def run_claude(prompt: str) -> str:
     """Shell out to the claude CLI; return stdout or raise CoverLetterError with
     a user-facing message. Used by both the CLI and the web UI."""
     try:
         result = subprocess.run(
-            ["claude", "-p", prompt],
+            ["claude", "-p", "--effort", _CLAUDE_EFFORT, prompt],
             capture_output=True, text=True, encoding="utf-8",
             stdin=subprocess.DEVNULL, timeout=180,
         )
