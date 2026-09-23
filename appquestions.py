@@ -5,7 +5,7 @@ some applications ask beyond a cover letter ("Why do you want to work here?",
 
 Unlike a cover letter, a job can have any number of these, added over time as
 you fill out an application. Each question/answer pair is stored together in
-one file per job (digests/application_answers/), keyed by a short id so it can
+one file per job (application_answers/), keyed by a short id so it can
 be revised or deleted independently. Every draft gets the same critique pass
 cover letters get (missed keywords, generic framing, unverified claims,
 ignoring the actual question asked) before it's saved.
@@ -32,7 +32,7 @@ import promptcommon
 from coverletter import CoverLetterError, _resolve_job, run_claude
 from enrichment import _profile_block
 
-_OUT_DIR = Path(__file__).with_name("digests") / "application_answers"
+_OUT_DIR = Path(__file__).with_name("application_answers")
 _BAK_DIR = _OUT_DIR / "backups"
 
 

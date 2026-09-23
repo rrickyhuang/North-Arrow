@@ -100,7 +100,7 @@ def connect(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
 
 
 def backup_db(db_path: Path | str = DB_PATH, *, keep: int = 14) -> Path | None:
-    """Snapshot the DB to `backups/jobs-YYYYMMDD-HHMMSS.db`, keeping the newest
+    """Snapshot the DB to `db_backups/jobs-YYYYMMDD-HHMMSS.db`, keeping the newest
     `keep` snapshots. Uses SQLite's online-backup API, so it's safe to run
     against a live/in-use database. Returns the snapshot path, or None if the
     source DB doesn't exist yet. Snapshots match `*.db` so they're gitignored.
@@ -111,7 +111,7 @@ def backup_db(db_path: Path | str = DB_PATH, *, keep: int = 14) -> Path | None:
     db_path = Path(db_path)
     if not db_path.exists():
         return None
-    backup_dir = db_path.with_name("backups")
+    backup_dir = db_path.with_name("db_backups")
     backup_dir.mkdir(exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     dest = backup_dir / f"{db_path.stem}-{stamp}.db"

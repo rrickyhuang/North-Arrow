@@ -16,7 +16,10 @@ discovery_journal.json
 *.db
 *.sqlite
 *.sqlite3
+db_backups/
 digests/
+cover_letters/
+application_answers/
 .geocode_cache.json
 *.geocode_cache.json
 logs/
@@ -39,8 +42,7 @@ env/
 Thumbs.db
 
 # ── Personal documents that may sit alongside the project ──
-# (resume / portfolio / cover letters — keep these out of a public repo)
+# (resume / portfolio files — keep these out of a public repo)
 *.pdf
 *Resume*
 *Portfolio*
-cover_letters/

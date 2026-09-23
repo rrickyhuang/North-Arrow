@@ -23,7 +23,7 @@ Usage:
                                                        # continue in the same loop
 
 Each revision overwrites the saved letter and archives the previous version,
-timestamped, under digests/cover_letters/backups/ (every revision is kept).
+timestamped, under cover_letters/backups/ (every revision is kept).
 Revisions use the same `claude` CLI (subscription, not API).
 """
 from __future__ import annotations
@@ -40,7 +40,7 @@ import db
 import promptcommon
 from enrichment import _profile_block
 
-_OUT_DIR = Path(__file__).with_name("digests") / "cover_letters"
+_OUT_DIR = Path(__file__).with_name("cover_letters")
 _BAK_DIR = _OUT_DIR / "backups"
 
 # Overridable via config.yaml's cover_letter.max_words. This is a hard

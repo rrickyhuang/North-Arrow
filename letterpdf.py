@@ -44,7 +44,7 @@ _PAGE_W, _PAGE_H = LETTER  # 612 x 792 — matches the template's Letter-size pa
 _MARGIN = 36  # pt — matches the template's 0.5in margins on all sides
 
 # PDFs live alongside the .md files but in their own subfolder, so a
-# directory listing of digests/cover_letters/ stays one draft-text file per
+# directory listing of cover_letters/ stays one draft-text file per
 # job rather than mixing in a second, regenerable-anytime artifact per job.
 _PDF_DIR = coverletter._OUT_DIR / "pdf"
 
