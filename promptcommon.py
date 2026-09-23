@@ -67,12 +67,17 @@ def ai_tells(extra: str = "") -> str:
         "thing once, in plain subject-verb-object order, and move on — don't "
         "circle back to restate a point you already made or wrap a simple "
         'statement in extra clauses ("what this really means is...", "at its '
-        'core..."). Describe experiences at the scale a normal person would '
-        "describe them — ordinary work stays ordinary; save words like "
-        '"transformative," "profound," or "passion" for things that actually '
-        "warrant them. Open with the actual point, not a throat-clearing "
-        'setup like "In today\'s world/landscape." Keep commentary about your '
-        "own doubts or honesty out of the text entirely — just state things "
-        "directly"
+        'core..."). State things directly instead of building a sentence around '
+        'a contrast ("It\'s not X, it\'s Y" — just say Y). Lead each sentence with '
+        'its actual point rather than a subordinate clause ("Through my work on X, '
+        'Y and Z became..." — just say "Y and Z became..."). Reach for the '
+        'plainest word that\'s accurate over a fancier synonym — if "good" or '
+        '"clear" is true, that beats "exceptional" or "invaluable." Describe '
+        "experiences at the scale a normal person would describe them — ordinary "
+        'work stays ordinary; save words like "transformative," "profound," or '
+        '"passion" for things that actually warrant them. Open with the actual '
+        'point, not a throat-clearing setup like "In today\'s world/landscape." '
+        "Keep commentary about your own doubts or honesty out of the text "
+        "entirely — just state things directly"
         f"{extra}."
     )
