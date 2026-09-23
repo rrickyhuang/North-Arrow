@@ -43,6 +43,11 @@ import db
 _PAGE_W, _PAGE_H = LETTER  # 612 x 792 — matches the template's Letter-size page
 _MARGIN = 36  # pt — matches the template's 0.5in margins on all sides
 
+# PDFs live alongside the .md files but in their own subfolder, so a
+# directory listing of digests/cover_letters/ stays one draft-text file per
+# job rather than mixing in a second, regenerable-anytime artifact per job.
+_PDF_DIR = coverletter._OUT_DIR / "pdf"
+
 _FONT_DIR = Path(r"C:\Windows\Fonts")
 _FONT_FILES = {
     "CenturySchoolbook": "CENSCBK.TTF",
@@ -57,6 +62,21 @@ _NAME_TRACKING = 0.150 * _NAME_SIZE  # IDML Tracking="150" = 0.150 em
 _PRONOUN_SIZE = 8
 _TEXT_SIZE = 11
 _LEADING = 15.5
+
+# Named so a future "custom colors" pass (e.g. an accent color) is a
+# constant swap here, not a hunt through draw calls. All three currently
+# come straight from the IDML template, not a design choice made here.
+_INK = (0, 0, 0)
+_MUTED = (89 / 255, 90 / 255, 92 / 255)  # IDML Color/u23d, used for the pronoun tag
+_LINK = (79 / 255, 92 / 255, 214 / 255)  # IDML Color/Hyperlink
+
+# A footer rule mirroring the header one — not part of the original InDesign
+# template, added deliberately so a shorter letter's trailing whitespace
+# reads as a framed page rather than as trailing off. FOOTER_GAP is the
+# rule's distance above the bottom margin; FOOTER_CLEARANCE is the extra
+# buffer kept between the last line of body text and the rule itself.
+_FOOTER_GAP = 20
+_FOOTER_CLEARANCE = 14
 
 _registered = False
 
@@ -125,27 +145,43 @@ def _draw_header(c, job, letterhead: dict, drafted: str) -> float:
     if pronoun:
         y -= _PRONOUN_SIZE + 4
         c.setFont("Century", _PRONOUN_SIZE)
+        c.setFillColorRGB(*_MUTED)
         c.drawString(x, y, pronoun)
+        c.setFillColorRGB(*_INK)
 
     y -= _NAME_SIZE
     name = (letterhead.get("name") or "").upper()
     _draw_tracked(c, x, y, name, "CenturySchoolbook-Bold", _NAME_SIZE, _NAME_TRACKING)
 
     y -= 10
-    c.setLineWidth(0.5)
+    c.setLineWidth(0.25)  # IDML GraphicLine StrokeWeight="0.25"
     c.line(x, y, _PAGE_W - _MARGIN, y)
 
     y -= 8 + _TEXT_SIZE
     c.setFont("CenturySchoolbook", _TEXT_SIZE)
-    contact = [letterhead.get(k, "") for k in ("phone", "email", "location", "website")]
-    contact = [v for v in contact if v]
+    contact = [(k, letterhead.get(k, "")) for k in ("phone", "email", "location", "website")]
+    contact = [(k, v) for k, v in contact if v]
     if contact:
-        col_w = (_PAGE_W - 2 * _MARGIN) / max(len(contact), 1)
-        for i, value in enumerate(contact):
-            if i == len(contact) - 1:
-                c.drawRightString(_PAGE_W - _MARGIN, y, value)
+        # Distribute with even gaps sized to the ACTUAL string widths (not a
+        # fixed column grid) — first item at the left margin, last ending
+        # exactly at the right margin, no overlap regardless of how long any
+        # individual value (e.g. an email address) happens to be.
+        widths = [c.stringWidth(v, "CenturySchoolbook", _TEXT_SIZE) for _, v in contact]
+        available = _PAGE_W - 2 * _MARGIN
+        gap = (available - sum(widths)) / (len(contact) - 1) if len(contact) > 1 else 0
+        cx = x
+        for (key, value), w in zip(contact, widths):
+            if key == "website":
+                # Matches the template's own defined Hyperlink character
+                # style rather than introducing a new color.
+                c.setFillColorRGB(*_LINK)
+                c.drawString(cx, y, value)
+                c.setFillColorRGB(*_INK)
+                url = value if re.match(r"^https?://", value) else f"https://{value}"
+                c.linkURL(url, (cx, y - 2, cx + w, y + _TEXT_SIZE), relative=0)
             else:
-                c.drawString(x + i * col_w, y, value)
+                c.drawString(cx, y, value)
+            cx += w + gap
 
     y -= 32
     c.setFont("CenturySchoolbook", _TEXT_SIZE)
@@ -154,6 +190,15 @@ def _draw_header(c, job, letterhead: dict, drafted: str) -> float:
     c.drawString(x, y, job.company or "the organization")
 
     return y - 20
+
+
+def _draw_footer(c) -> None:
+    """Thin rule near the bottom margin, mirroring the header rule, so a
+    shorter letter's leftover whitespace reads as a deliberately framed
+    page rather than as the letter trailing off early."""
+    y = _MARGIN + _FOOTER_GAP
+    c.setLineWidth(0.25)
+    c.line(_MARGIN, y, _PAGE_W - _MARGIN, y)
 
 
 def render_letter_pdf(job, cfg: dict) -> Path:
@@ -171,7 +216,8 @@ def render_letter_pdf(job, cfg: dict) -> Path:
     drafted = _parse_drafted_date(header)
 
     letterhead = cfg.get("letterhead", {})
-    out_path = path.with_suffix(".pdf")
+    _PDF_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = _PDF_DIR / path.with_suffix(".pdf").name
 
     doc = BaseDocTemplate(str(out_path), pagesize=LETTER,
                            leftMargin=_MARGIN, rightMargin=_MARGIN,
@@ -202,12 +248,14 @@ def render_letter_pdf(job, cfg: dict) -> Path:
     _measure = Canvas(str(out_path))
     header_bottom = _draw_header(_measure, job, letterhead, drafted)
 
-    frame = Frame(_MARGIN, _MARGIN, _PAGE_W - 2 * _MARGIN, header_bottom - _MARGIN,
+    frame_bottom = _MARGIN + _FOOTER_GAP + _FOOTER_CLEARANCE
+    frame = Frame(_MARGIN, frame_bottom, _PAGE_W - 2 * _MARGIN, header_bottom - frame_bottom,
                   leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
 
     def _on_first_page(c, _doc):
         c.saveState()
         _draw_header(c, job, letterhead, drafted)
+        _draw_footer(c)
         c.restoreState()
 
     doc.addPageTemplates([
