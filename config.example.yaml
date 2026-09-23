@@ -128,6 +128,8 @@ profile:
     Anything that sets you apart from other candidates.
   # Optional: paste your full resume text here so enrichment/cover-letter
   # prompts can ground claims in actual experience, not just the summary above.
+  # Don't include your name/contact line — config.py generates that from the
+  # `letterhead` section below and prepends it automatically.
   resume: >
     (optional — paste your full resume text here)
   # Used only by coverletter.py, to ground tone/voice — not fed into enrichment.

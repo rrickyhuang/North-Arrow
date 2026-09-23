@@ -116,7 +116,28 @@ def load_config() -> dict:
     with CONFIG_PATH.open("r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     _validate(cfg)
+    _prepend_resume_header(cfg)
     return cfg
+
+
+def _prepend_resume_header(cfg: dict) -> None:
+    """profile.resume is prose fed into AI prompts; letterhead is structured
+    data for the rendered PDF header. Rather than keeping your name/contact
+    info duplicated in both, letterhead is the single source of truth —
+    this builds the same header line resume text used to have written out
+    literally, and prepends it in memory. Does nothing if either section
+    (or profile.resume) is missing."""
+    letterhead = cfg.get("letterhead")
+    profile = cfg.get("profile")
+    if not letterhead or not profile or not profile.get("resume"):
+        return
+    name_line = " ".join(
+        v for v in (letterhead.get("name", "").upper(), letterhead.get("pronouns")) if v)
+    contact_line = " · ".join(
+        v for v in (letterhead.get(k) for k in ("location", "phone", "email", "website")) if v)
+    header = "\n\n".join(v for v in (name_line, contact_line) if v)
+    if header:
+        profile["resume"] = f"{header}\n\n{profile['resume'].strip()}"
 
 
 def env(key: str, default: str | None = None, *, required: bool = False) -> str | None:
