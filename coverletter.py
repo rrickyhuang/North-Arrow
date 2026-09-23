@@ -105,11 +105,10 @@ Description:
 - Date of writing: {date.today().strftime("%B %d, %Y")}
 - Recipient / organization: {job.company or "the organization"} — use a named contact only if the posting actually gives one; otherwise address it to "Dear Hiring Committee," or "Dear {job.company} Hiring Team,".
 
-=== A ROUGH ARC TO FOLLOW (a guide, not a rigid template — let the voice sample shape how it actually opens and flows) ===
-- Somewhere early, make clear which exact position this is for and, if there's a genuine hook (a personal connection, a sharp read of what they need), lead with that rather than a boilerplate "I am writing to apply" opener.
-- Show you understand what this organization actually does and, where the posting hints at it, why they're hiring for this role right now — the problem or gap behind the opening, not a generic description of the org.
-- Make the case that this candidate answers that need. Back it with a brief, concrete story from real experience, not just a list of claims restated from the posting. If notes were supplied above, prioritize weaving those in here.
-- Close with genuine interest in a conversation and appreciation for their time.
+=== A ROUGH ARC TO FOLLOW, COMPRESSED INTO 3 PARAGRAPHS (a guide, not a rigid template — let the voice sample shape how it actually opens and flows) ===
+- Paragraph 1: make clear which exact position this is for, and combine the hook with a sign of understanding what this organization actually does and why they're hiring for this role right now — one paragraph, not two separate beats. Lead with a genuine hook (a personal connection, a sharp read of what they need) rather than a boilerplate "I am writing to apply" opener.
+- Paragraph 2: make the case that this candidate answers that need, backed by a brief, concrete story from real experience rather than a list of claims restated from the posting. If notes were supplied above, prioritize weaving those in here.
+- Paragraph 3: close with genuine interest in a conversation and appreciation for their time — a few sentences, not a full paragraph's worth of new claims.
 
 === OTHER INSTRUCTIONS ===
 - Open with a proper salutation and end with a signature line ("Sincerely," + candidate name) — don't skip the greeting or the closing.
@@ -141,8 +140,9 @@ Check for:
 - Keywords/requirements from the posting that the letter ignores despite the candidate plausibly having relevant experience for them.
 - Weak, generic, or boilerplate framing that could apply to any job/company.
 - Claims the letter makes that aren't grounded in anything the posting or the letter itself establishes (unverifiable or invented specifics).
-- Length: this should read as a short, direct letter (target {target_low}-{target_high} words). Flag it if it runs noticeably past {max_words} words, or if it's padded with sentences that restate a point already made rather than adding one.
+- Length: this should read as a short, direct letter (target {target_low}-{target_high} words). Flag it if it runs past {max_words} words, or if it's padded with sentences that restate a point already made rather than adding one. If it's over, name specific sentences/clauses to cut, not just a word-count problem to fix vaguely.
 - Inflated language: ordinary work described as if it were extraordinary (e.g. routine tasks dressed up with words like "transformative" or "profound"). Flag it and suggest describing the same experience at its actual scale.
+- Any sentence that names, concedes, or draws attention to a qualification gap the posting didn't ask about (e.g. "to be honest/straightforward about the gap...", "I haven't yet done X"). This should be cut outright, not trimmed — the candidate never asked for it to be raised, so there's no partial version of this sentence that belongs in the letter.
 
 If the letter has none of these problems, respond with exactly "{_CRITIQUE_PASS_SENTINEL}" and nothing else.
 
@@ -162,6 +162,27 @@ def build_revision_prompt(letter: str, instruction: str) -> str:
 - Make ONLY the change requested. Leave every other sentence exactly as it is — same wording, same paragraphs, same order. Do not "improve" untouched parts.
 - Keep the salutation and the "Sincerely," + name signature intact unless the change is specifically about them.
 - Do not narrate the edit or add commentary. Output ONLY the full revised letter text (no markdown, no notes before or after)."""
+
+
+def build_trim_prompt(letter: str, max_words: int, target_high: int) -> str:
+    """Last-resort length pass: used only when a letter is still over
+    max_words after the critique-driven revision, so a single soft
+    revision instruction can't leave an over-length letter as the final
+    saved version."""
+    return f"""This cover letter is over length. Cut it down to {target_high} words or fewer, {max_words} as an absolute outer limit.
+
+=== CURRENT LETTER ===
+{letter}
+
+=== HOW TO CUT ===
+- Cut whole sentences and clauses, starting with anything that restates a point already made elsewhere in the letter, or that elaborates past the point where the reader already gets it.
+- Don't cut evidence that's actually load-bearing (the specific example the case rests on) just to hit the count faster.
+- Keep the salutation and the "Sincerely," + name signature.
+- Do not narrate the edit or add commentary. Output ONLY the trimmed letter text (no markdown, no notes before or after)."""
+
+
+def _word_count(letter: str) -> int:
+    return len(letter.split())
 
 
 def _slug(text: str) -> str:
@@ -308,13 +329,20 @@ def draft_letter(job, cfg: dict, notes: str = "") -> Path:
     job posting before it's saved; if it flags concrete issues, one more call
     applies that critique as a revision. A critique-call failure shouldn't
     block presenting an otherwise-good draft, so it's caught rather than
-    raising CoverLetterError."""
+    raising CoverLetterError.
+
+    A single critique-driven revision doesn't reliably land under max_words
+    (the model can undershoot the requested cuts), so as a last resort, if
+    the letter is still over max_words afterward, one more dedicated trim
+    pass runs against it — this one is caught rather than raised too, since
+    an over-length letter is still better than none."""
     conn = db.connect()
     db.init_db(conn)
     company_research.get_or_research(conn, job)
     conn.close()
 
     max_words = cfg.get("cover_letter", {}).get("max_words", _DEFAULT_MAX_WORDS)
+    target_low, target_high = _target_word_range(max_words)
     letter = run_claude(build_prompt(job, cfg, notes))
     try:
         critique = run_claude(build_critique_prompt(job, letter, max_words))
@@ -322,6 +350,11 @@ def draft_letter(job, cfg: dict, notes: str = "") -> Path:
         critique = _CRITIQUE_PASS_SENTINEL
     if _CRITIQUE_PASS_SENTINEL not in critique.upper():
         letter = run_claude(build_revision_prompt(letter, critique))
+    if _word_count(letter) > max_words:
+        try:
+            letter = run_claude(build_trim_prompt(letter, max_words, target_high))
+        except CoverLetterError:
+            pass
     return _save_letter(job, letter)
 
 
