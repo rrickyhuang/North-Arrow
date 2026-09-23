@@ -105,16 +105,44 @@ def get_answer(job, qa_id: str) -> QA | None:
     return next((qa for qa in list_answers(job) if qa.id == qa_id), None)
 
 
+def _parse_limit(limit: str) -> tuple[int, str] | None:
+    """Pull a number + unit out of a limit string, e.g. '500 characters',
+    '500 characters or less', 'max 150 words', '<500 chars'. Returns None if
+    no number/unit pair is found anywhere in the string — the limit still
+    gets passed to the model as a soft instruction in that case, but nothing
+    here can measure or enforce it."""
+    m = re.search(r"(\d+)\s*(character|char|word)s?", limit.strip(), re.I)
+    if not m:
+        return None
+    n, unit = int(m.group(1)), m.group(2).lower()
+    return n, ("characters" if unit.startswith("char") else "words")
+
+
+def _measure(text: str, unit: str) -> int:
+    return len(text) if unit == "characters" else len(text.split())
+
+
 def build_prompt(job, cfg: dict, question: str, notes: str = "", limit: str = "") -> str:
     profile = cfg.get("profile", {})
     context = promptcommon.context_block(job, "answer")
     notes_block = promptcommon.notes_block(notes, "answer")
 
-    limit_block = (
-        f"\n=== LENGTH CONSTRAINT ===\nThe application enforces a limit of "
-        f"{limit.strip()}. Stay comfortably within it.\n"
-        if limit.strip() else ""
-    )
+    parsed = _parse_limit(limit)
+    if parsed:
+        n, unit = parsed
+        target = int(n * 0.85)
+        limit_block = (
+            f"\n=== LENGTH CONSTRAINT ===\nThe application enforces a hard limit of "
+            f"{n} {unit}. Aim for around {target} {unit} — comfortably under, not "
+            f"padded out to the edge of it.\n"
+        )
+    elif limit.strip():
+        limit_block = (
+            f"\n=== LENGTH CONSTRAINT ===\nThe application enforces a limit of "
+            f"{limit.strip()}. Stay comfortably within it.\n"
+        )
+    else:
+        limit_block = ""
 
     sample = (profile.get("writing_sample") or "").strip()
     voice_block = (
@@ -155,7 +183,15 @@ Description:
 _CRITIQUE_PASS_SENTINEL = "NO CHANGES NEEDED"
 
 
-def build_critique_prompt(job, question: str, answer: str) -> str:
+def build_critique_prompt(job, question: str, answer: str, limit: str = "") -> str:
+    parsed = _parse_limit(limit)
+    length_check = (
+        f"- Length: this must fit a hard limit of {parsed[0]} {parsed[1]}. Count "
+        f"roughly — the current answer is about {_measure(answer, parsed[1])} "
+        f"{parsed[1]}. Flag it if it's at or over the limit, and name specific "
+        f"sentences/clauses to cut, not just a vague length note.\n"
+        if parsed else ""
+    )
     return f"""You are a skeptical hiring manager reviewing an application-question answer against the job posting and the question it's supposed to answer. Be specific and unsparing — this answer will be submitted as-is unless you flag something.
 
 === JOB POSTING ===
@@ -175,7 +211,7 @@ Check for:
 - Does the answer actually address what the question asks, or does it drift into generic self-promotion?
 - Weak, generic, or boilerplate framing that could apply to any job/company/question.
 - Claims that aren't grounded in anything the posting or the answer itself establishes (unverifiable or invented specifics).
-
+{length_check}
 If the answer has none of these problems, respond with exactly "{_CRITIQUE_PASS_SENTINEL}" and nothing else.
 
 Otherwise, respond with a short, concrete list of fixes — each one specific enough to act on directly. Do not rewrite the answer yourself. Do not comment on anything not covered above."""
@@ -195,6 +231,22 @@ def build_revision_prompt(answer: str, instruction: str) -> str:
 - Do not narrate the edit or add commentary. Output ONLY the full revised answer text (no markdown, no notes before or after)."""
 
 
+def build_trim_prompt(answer: str, n: int, unit: str) -> str:
+    """Last-resort length pass, mirroring coverletter.py's build_trim_prompt:
+    used only when the answer is still over the hard limit after the
+    critique-driven revision, so a single soft revision instruction can't
+    leave an over-limit answer as the final saved version."""
+    return f"""This application answer is over its hard length limit. Cut it down to under {n} {unit}.
+
+=== CURRENT ANSWER ===
+{answer}
+
+=== HOW TO CUT ===
+- Cut whole sentences and clauses, starting with anything that restates a point already made, or elaborates past the point where the reader already gets it.
+- Don't cut the specific, concrete detail the answer's case actually rests on just to hit the count faster.
+- Do not narrate the edit or add commentary. Output ONLY the trimmed answer text (no markdown, no notes before or after)."""
+
+
 def draft_answer(job, cfg: dict, question: str, notes: str = "", limit: str = "") -> QA:
     """Draft + save an answer to `question`, returning the QA. Raises
     CoverLetterError. Re-drafting the same question text updates its existing
@@ -202,7 +254,10 @@ def draft_answer(job, cfg: dict, question: str, notes: str = "", limit: str = ""
 
     Same research/critique flow as coverletter.draft_letter: company research
     is cached on the job row, and a fresh-context critique call revises the
-    draft if it flags concrete issues before saving."""
+    draft if it flags concrete issues before saving. If a --limit was given
+    and is parseable (e.g. "500 characters"), a critique-driven revision
+    doesn't reliably land under it on its own, so a dedicated trim pass runs
+    as a last resort when the answer is still over afterward."""
     conn = db.connect()
     db.init_db(conn)
     company_research.get_or_research(conn, job)
@@ -210,11 +265,20 @@ def draft_answer(job, cfg: dict, question: str, notes: str = "", limit: str = ""
 
     answer = run_claude(build_prompt(job, cfg, question, notes, limit))
     try:
-        critique = run_claude(build_critique_prompt(job, question, answer))
+        critique = run_claude(build_critique_prompt(job, question, answer, limit))
     except CoverLetterError:
         critique = _CRITIQUE_PASS_SENTINEL
     if _CRITIQUE_PASS_SENTINEL not in critique.upper():
         answer = run_claude(build_revision_prompt(answer, critique))
+
+    parsed = _parse_limit(limit)
+    if parsed:
+        n, unit = parsed
+        if _measure(answer, unit) > n:
+            try:
+                answer = run_claude(build_trim_prompt(answer, n, unit))
+            except CoverLetterError:
+                pass
 
     qas = list_answers(job)
     existing = next((qa for qa in qas
