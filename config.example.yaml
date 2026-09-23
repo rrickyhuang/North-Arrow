@@ -219,9 +219,10 @@ delivery:
 
 # ── Cover letters (coverletter.py) ───────────────────────────────────────────
 cover_letter:
-  # Soft cap enforced in the draft prompt and checked again in the critique
-  # pass. Optional — defaults to 500 if this whole section is omitted.
-  max_words: 500
+  # Hard ceiling checked in the critique pass. The draft prompt actually aims
+  # well under this (see _target_word_range in coverletter.py) for a short,
+  # direct letter. Optional — defaults to 350 if this whole section is omitted.
+  max_words: 350
 
 # ── Sources to run ───────────────────────────────────────────────────────────
 sources:

@@ -43,9 +43,10 @@ from enrichment import _profile_block
 _OUT_DIR = Path(__file__).with_name("digests") / "cover_letters"
 _BAK_DIR = _OUT_DIR / "backups"
 
-# Overridable via config.yaml's cover_letter.max_words; most application
-# forms and reasonable readers cap out well before this.
-_DEFAULT_MAX_WORDS = 500
+# Overridable via config.yaml's cover_letter.max_words. This is a hard
+# ceiling for the critique pass to flag, not the length to write toward —
+# see _target_word_range() for the actual aim handed to the model.
+_DEFAULT_MAX_WORDS = 350
 
 
 def _resolve_job(conn, target: str):
@@ -58,11 +59,20 @@ def _resolve_job(conn, target: str):
     return db.get(conn, target)
 
 
+def _target_word_range(max_words: int) -> tuple[int, int]:
+    """A short, direct target range to write toward, scaled to but well
+    under `max_words` (the hard ceiling checked in the critique pass)."""
+    high = min(max_words, 300)
+    low = max(150, int(high * 0.75))
+    return low, high
+
+
 def build_prompt(job, cfg: dict, notes: str = "") -> str:
     profile = cfg.get("profile", {})
     context = promptcommon.context_block(job, "letter")
     notes_block = promptcommon.notes_block(notes, "letter")
     max_words = cfg.get("cover_letter", {}).get("max_words", _DEFAULT_MAX_WORDS)
+    target_low, target_high = _target_word_range(max_words)
 
     sample = (profile.get("writing_sample") or "").strip()
     voice_block = (
@@ -103,9 +113,9 @@ Description:
 
 === OTHER INSTRUCTIONS ===
 - Open with a proper salutation and end with a signature line ("Sincerely," + candidate name) — don't skip the greeting or the closing.
-- Roughly 3-4 paragraphs, and no more than {max_words} words total. Let the voice sample shape the paragraphing rather than padding toward the cap, but stay under it.
+- Write a short, direct letter: 3 tight paragraphs, aiming for {target_low}-{target_high} words total. Make each sentence earn its place rather than filling space — a hiring manager should be able to read this in under a minute. ({max_words} words is a hard ceiling, not something to write toward.)
 - {promptcommon.no_gap_concession()}
-- Do NOT offer to send, share, or attach a resume, portfolio, references, or work samples, and don't mention them at all — assume the resume and portfolio are already attached to the application. The closing should simply express interest in talking further and thank them for their time.
+- Assume the resume and portfolio are already attached to the application, so the closing should simply express interest in talking further and thank them for their time — no offer to send, share, or attach a resume, portfolio, references, or work samples.
 - {promptcommon.ai_tells(extra="; and a closing paragraph that just restates everything already said")}
 - Output ONLY the letter text (no subject line, no markdown headers, no commentary before/after)."""
 
@@ -114,6 +124,7 @@ _CRITIQUE_PASS_SENTINEL = "NO CHANGES NEEDED"
 
 
 def build_critique_prompt(job, letter: str, max_words: int = _DEFAULT_MAX_WORDS) -> str:
+    target_low, target_high = _target_word_range(max_words)
     return f"""You are a skeptical hiring manager reviewing a cover letter against the job posting it's responding to. Be specific and unsparing — this letter will be sent as-is unless you flag something.
 
 === JOB POSTING ===
@@ -130,7 +141,8 @@ Check for:
 - Keywords/requirements from the posting that the letter ignores despite the candidate plausibly having relevant experience for them.
 - Weak, generic, or boilerplate framing that could apply to any job/company.
 - Claims the letter makes that aren't grounded in anything the posting or the letter itself establishes (unverifiable or invented specifics).
-- Whether the letter runs noticeably over {max_words} words (count roughly; a small overage is fine, a clearly bloated letter is not).
+- Length: this should read as a short, direct letter (target {target_low}-{target_high} words). Flag it if it runs noticeably past {max_words} words, or if it's padded with sentences that restate a point already made rather than adding one.
+- Inflated language: ordinary work described as if it were extraordinary (e.g. routine tasks dressed up with words like "transformative" or "profound"). Flag it and suggest describing the same experience at its actual scale.
 
 If the letter has none of these problems, respond with exactly "{_CRITIQUE_PASS_SENTINEL}" and nothing else.
 

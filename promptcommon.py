@@ -46,27 +46,33 @@ def no_gap_concession() -> str:
     in an actual generated draft at some point — extend this list rather than
     letting a fix land in only one of the two prompts that use it."""
     return (
-        f'Do NOT proactively raise, name, or apologize for qualification gaps, even '
-        f'if the question or posting invites reflection on weaknesses. Don\'t concede '
-        f"what the candidate lacks — spend the space making a positive case with the "
-        f"experience the candidate does have. (Only address a gap directly if the "
-        f"candidate's notes explicitly ask you to.) Never narrate your own honesty "
-        f'about it — no "I want to be upfront/straightforward/honest", no "I\'ll be '
-        f'candid", no "I\'ll be equally straight/candid/upfront about...", no "I\'d '
-        f'rather name that plainly than dress it up", no "I know the posting wants '
-        f'X, but...". A confident writer just makes the case; they don\'t announce a '
-        f"shortfall the reader hadn't raised."
+        f"Spend the space making a positive case with the experience the candidate "
+        f"does have, even where the question or posting invites reflection on "
+        f"weaknesses. A confident writer just makes the case, the way they would in "
+        f"conversation, without first announcing a shortfall the reader hadn't "
+        f"raised. (Only address a gap directly if the candidate's notes explicitly "
+        f'ask you to.) That means no lead-in like "I want to be upfront/honest", '
+        f'"I\'ll be candid", or "I know the posting wants X, but..." — skip the '
+        f"announcement and go straight to the case."
     )
 
 
 def ai_tells(extra: str = "") -> str:
-    """Instruction to avoid generic AI writing tells. `extra` appends
-    additional format-specific tells (e.g. cover letters' restating closing
+    """Instruction to steer away from generic AI writing tells, framed as
+    positive habits to write toward rather than a list of bans. `extra`
+    appends an additional format-specific habit (e.g. cover letters' closing
     paragraph) before the final period."""
     return (
-        "Write like a real, specific person, not a generic AI assistant. Avoid "
-        'these tells: meta-commentary addressed to the reader about your own '
-        'doubts or honesty; hedges like "more than you might expect" or "you '
-        'might be wondering"; hollow openers like "In today\'s world/landscape"'
+        "Write like a real, specific person, not a generic AI assistant. Say each "
+        "thing once, in plain subject-verb-object order, and move on — don't "
+        "circle back to restate a point you already made or wrap a simple "
+        'statement in extra clauses ("what this really means is...", "at its '
+        'core..."). Describe experiences at the scale a normal person would '
+        "describe them — ordinary work stays ordinary; save words like "
+        '"transformative," "profound," or "passion" for things that actually '
+        "warrant them. Open with the actual point, not a throat-clearing "
+        'setup like "In today\'s world/landscape." Keep commentary about your '
+        "own doubts or honesty out of the text entirely — just state things "
+        "directly"
         f"{extra}."
     )
