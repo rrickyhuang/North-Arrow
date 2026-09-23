@@ -224,6 +224,19 @@ cover_letter:
   # direct letter. Optional — defaults to 350 if this whole section is omitted.
   max_words: 350
 
+# ── Letterhead (letterpdf.py) ────────────────────────────────────────────────
+# Structured contact info for the rendered PDF's header, separate from the
+# free-text profile.resume block above (which is prose for the AI prompt, not
+# a source letterpdf.py should have to parse). Whole section optional; a
+# missing field just leaves that part of the header blank.
+letterhead:
+  name: "Ricky Huang"
+  pronouns: "(he/him)"
+  phone: "647-856-3756"
+  email: "rkyhuang03@gmail.com"
+  location: "Vancouver, BC"
+  website: "linktr.ee/rkyhuang"
+
 # ── Sources to run ───────────────────────────────────────────────────────────
 sources:
   indeed: true      # via JobSpy

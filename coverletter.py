@@ -111,7 +111,7 @@ Description:
 - Paragraph 3: close with genuine interest in a conversation and appreciation for their time — a few sentences, not a full paragraph's worth of new claims.
 
 === OTHER INSTRUCTIONS ===
-- Open with a proper salutation and end with a signature line ("Sincerely," + candidate name) — don't skip the greeting or the closing.
+- Open with a proper salutation. Do NOT write a sign-off or signature line ("Sincerely," + name) — end on the closing paragraph's last sentence; the sign-off is added separately afterward.
 - Write a short, direct letter: 3 tight paragraphs, aiming for {target_low}-{target_high} words total. Make each sentence earn its place rather than filling space — a hiring manager should be able to read this in under a minute. ({max_words} words is a hard ceiling, not something to write toward.)
 - {promptcommon.no_gap_concession()}
 - Assume the resume and portfolio are already attached to the application, so the closing should simply express interest in talking further and thank them for their time — no offer to send, share, or attach a resume, portfolio, references, or work samples.
