@@ -842,6 +842,13 @@ def inbox_partition(jobs: list, stale_days: int = STALE_AFTER_DAYS, *,
             new.append(j)
         else:
             backlog.append(j)
+    # New to triage is a decision queue, not a leaderboard: sort it oldest-
+    # arrival-first (rather than inheriting the score-desc order everything
+    # else uses) so a job that's been sitting there stays at the top across
+    # visits instead of getting bumped down every time a higher-scoring job
+    # arrives. Without this, the group you were mid-triage-ing reshuffles out
+    # from under you as new postings come in.
+    new.sort(key=lambda j: j.first_seen_at)
     queue_groups = [g for g in (
         ("★ Saved", saved),
         ("New to triage", new),
@@ -878,11 +885,17 @@ def _grp_header(label: str, count: int, *, noise: bool) -> str:
     if label.startswith("★ "):
         lead = f'<span style="color:{_QUAL_COLOR["stretch"]};">★</span> '
         label = label[2:]
+    # Collapsed/expanded state is toggled and persisted client-side (see
+    # toggleGrp() in INBOX_SCRIPT), keyed by the raw label — not rendered
+    # server-side — so collapsing a group survives a filter reload (which
+    # re-fetches #cards from the server) without a round trip.
     return (
-        f'<h3 class="grp" data-noise="{0 if not noise else 1}" '
+        f'<h3 class="grp" data-noise="{0 if not noise else 1}" data-label="{_esc(label)}" '
+        f'onclick="toggleGrp(this)" '
         f'style="margin:22px 0 10px;font-family:{FONT_MONO};font-size:19px;'
-        f'font-weight:500;letter-spacing:-0.02em;color:{INK};'
+        f'font-weight:500;letter-spacing:-0.02em;color:{INK};cursor:pointer;user-select:none;'
         f'border-bottom:1px solid {GRID};padding-bottom:6px;">'
+        f'<span class="grp-arrow" style="display:inline-block;width:14px;">&#9662;</span>'
         f'{lead}{_swatch(_INBOX_GROUP_COLOR.get(label))}{_esc(label)} '
         f'<span class="grp-n" style="color:{MUTED_LIGHT};font-weight:400;">'
         f'({count})</span></h3>'
@@ -929,13 +942,19 @@ def inbox_cards_html(queue_groups, noise_groups, card_fn, *, qs: str = "") -> st
     for groups, noise in ((queue_groups, False), (noise_groups, True)):
         for label, members in groups:
             parts.append(_grp_header(label, len(members), noise=noise))
+            body = []
             slug = _PAGINATED_GROUP_SLUGS.get(label)
             if slug:
                 shown = members[:INBOX_PAGE_SIZE]
-                parts.append("".join(card_fn(j) for j in shown))
-                parts.append(_load_more_btn(slug, qs, len(shown), len(members) - len(shown)))
+                body.append("".join(card_fn(j) for j in shown))
+                body.append(_load_more_btn(slug, qs, len(shown), len(members) - len(shown)))
             else:
-                parts.append("".join(card_fn(j) for j in members))
+                body.append("".join(card_fn(j) for j in members))
+            # A wrapping div (not bare siblings) so toggleGrp() can hide/show
+            # the whole group body — including its "Load more" button — with
+            # one style flip instead of walking sibling nodes until the next
+            # .grp header.
+            parts.append(f'<div class="grp-body">{"".join(body)}</div>')
     return "".join(parts)
 
 
@@ -1014,6 +1033,46 @@ def inbox_controls(jobs: list, *, new_count: int, queue_count: int,
 
 
 INBOX_SCRIPT = """<script>
+// Collapsed-group state persists in localStorage (per label, e.g. "Backlog"),
+// not on the server — so it survives filter reloads (which re-fetch #cards
+// from scratch) without a round trip, but is otherwise this-browser-only.
+// "New to triage" is deliberately never auto-restored collapsed: it's the
+// one group that's supposed to greet you open every visit.
+var COLLAPSE_KEY = 'cockpit_collapsed_groups';
+function _collapsedSet(){
+  try { return new Set(JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '[]')); }
+  catch (e) { return new Set(); }
+}
+function _saveCollapsed(set){
+  try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(Array.from(set))); }
+  catch (e) {}
+}
+function _setGrpCollapsed(h3, collapsed){
+  var body = h3.nextElementSibling;
+  if (body) body.style.display = collapsed ? 'none' : '';
+  var arrow = h3.querySelector('.grp-arrow');
+  if (arrow) arrow.innerHTML = collapsed ? '&#9656;' : '&#9662;';
+}
+function toggleGrp(h3){
+  var label = h3.dataset.label;
+  var set = _collapsedSet();
+  var collapsed = !set.has(label);
+  if (collapsed) set.add(label); else set.delete(label);
+  _saveCollapsed(set);
+  _setGrpCollapsed(h3, collapsed);
+}
+function applyCollapsedGroups(){
+  var set = _collapsedSet();
+  document.querySelectorAll('#cards .grp').forEach(function(h3){
+    if (h3.dataset.label !== 'New to triage' && set.has(h3.dataset.label)) {
+      _setGrpCollapsed(h3, true);
+    }
+  });
+}
+applyCollapsedGroups();
+document.addEventListener('htmx:afterSwap', function(ev){
+  if (ev.detail && ev.detail.target && ev.detail.target.id === 'cards') applyCollapsedGroups();
+});
 function cardsQS(){
   var p = new URLSearchParams();
   var q = (document.getElementById('q').value || '').trim();
