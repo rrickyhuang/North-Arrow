@@ -66,7 +66,7 @@ def base_config() -> dict:
                 "mixed_role": 0.16, "salary": 0.12, "role_quality": 0.08,
             },
             "preferences": {
-                "salary_floor": 60000, "salary_target": 85000,
+                "salary_floor": 68000, "salary_target": 85000,
                 "remote_ok": True, "hybrid_ok": True,
             },
             "target_roles": ["urban_design"],

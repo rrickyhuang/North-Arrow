@@ -1,12 +1,14 @@
-"""Daily digest: render the ranked shortlist to markdown and (optionally) email it.
+"""Weekly digest: render the top-prospects shortlist to markdown and (optionally) email it.
 
     python digest.py            build + write + email per config.delivery
     python digest.py --no-email just write the markdown file
     python digest.py --stdout   print to console, write nothing
 
 Pulls from the current DB — run scrape.py first to refresh. Jobs at/above
-delivery.min_score_for_digest are the shortlist; a few near-misses are appended
-so the digest is useful even on a thin day. If commute.google_maps.enabled is
+delivery.min_score_for_digest are the shortlist. Near-misses are appended only if
+delivery.show_near_misses is on (off by default: the point is a short, strong list).
+With nothing above the bar, the file is still written but no email is sent.
+If commute.google_maps.enabled is
 on (config.yaml) and GOOGLE_MAPS_API_KEY is set (.env), shortlisted jobs get a
 real transit-time refinement — see commute_precise.py.
 
@@ -100,7 +102,7 @@ def build_markdown(primary: list, near: list, tracked: list, cfg: dict,
                    row_of: dict[str, int]) -> str:
     thr = cfg["delivery"]["min_score_for_digest"]
     today = date.today().isoformat()
-    out = [f"# North Arrow — Daily Shortlist", f"_{today} · {len(primary)} match"
+    out = [f"# North Arrow — Weekly Shortlist", f"_{today} · {len(primary)} match"
            f"{'es' if len(primary) != 1 else ''} (score ≥ {thr})_", ""]
     if primary:
         for label, members in html_render.group_by_qual(primary):
@@ -109,7 +111,7 @@ def build_markdown(primary: list, near: list, tracked: list, cfg: dict,
                 out.append(_job_md(j, i, row_of.get(j.id)))
                 out.append("\n---\n")
     else:
-        out.append("_No postings cleared the bar today._\n")
+        out.append("_No postings cleared the bar this week._\n")
     if near:
         out.append("## Near misses (below the bar)\n")
         for i, j in enumerate(near, 1):
@@ -169,7 +171,8 @@ def select(conn, cfg: dict, *, refine: bool = True) -> tuple[list, list, list]:
             open_jobs.sort(key=lambda j: j.score, reverse=True)
 
     primary = [j for j in open_jobs if j.score >= thr][:cap]
-    near = [j for j in open_jobs if 0 < j.score < thr][:5] if len(primary) < 5 else []
+    near = ([j for j in open_jobs if 0 < j.score < thr][:5]
+            if d.get("show_near_misses", False) and len(primary) < 5 else [])
     if refine:
         # Real transit time (display only, doesn't affect ranking) for whatever
         # made the shortlist but wasn't already refined above as borderline.
@@ -195,7 +198,7 @@ def send_email(md: str, html_body: str, n: int, cfg: dict) -> bool:
     pw = pw.replace(" ", "")  # app passwords are shown with spaces
     to = config.env("DIGEST_TO") or addr
     msg = EmailMessage()
-    msg["Subject"] = f"North Arrow — {n} match{'es' if n != 1 else ''} ({date.today().isoformat()})"
+    msg["Subject"] = f"North Arrow weekly — {n} top prospect{'s' if n != 1 else ''} ({date.today().isoformat()})"
     msg["From"] = addr
     msg["To"] = to
     msg.set_content(md)                       # plain-text fallback (markdown)
@@ -226,7 +229,9 @@ def run(cfg: dict, *, write: bool = True, email: bool = True,
     if write and d.get("write_markdown", True):
         path = write_file(md, cfg)
         log.info("wrote %s", path)
-    if email and d.get("send_email", False):
+    if email and d.get("send_email", False) and not primary:
+        log.info("no postings cleared the bar — skipping email")
+    elif email and d.get("send_email", False):
         html_body = html_render.digest_html(primary, near, tracked, cfg, row_of)
         if send_email(md, html_body, len(primary), cfg):
             db.clear_new_flags(conn)  # only clear once successfully delivered
@@ -240,7 +245,7 @@ def main() -> None:
         sys.stdout.reconfigure(encoding="utf-8")
     except (AttributeError, ValueError):
         pass
-    ap = argparse.ArgumentParser(description="Build/send the daily digest.")
+    ap = argparse.ArgumentParser(description="Build/send the weekly digest.")
     ap.add_argument("--no-email", action="store_true", help="write file but don't email")
     ap.add_argument("--stdout", action="store_true", help="print only, write nothing")
     args = ap.parse_args()

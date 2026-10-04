@@ -645,7 +645,7 @@ def digest_html(primary: list, near: list, tracked: list, cfg: dict,
                  f'font-size:17px;color:{INK};margin:24px 0 12px;">Near misses (below the bar)</h2>')
         body += "".join(job_card(j, i, row_no=row_of.get(j.id)) for i, j in enumerate(near, 1))
     body += _tracker_html(tracked, row_of)
-    return page("North Arrow — Daily Shortlist", intro, body, chrome=False)
+    return page("North Arrow — Weekly Shortlist", intro, body, chrome=False)
 
 
 # ── Browser report: search + filter controls ────────────────────────────────
@@ -800,27 +800,25 @@ def job_matches_filter(job, *, q: str = "", source: str = "", quals: list[str] |
 
 
 def inbox_partition(jobs: list, stale_days: int = STALE_AFTER_DAYS, *,
-                    new_since: datetime | None = None):
+                    min_score: float = 0.0):
     """Assign every job to exactly one inbox bucket, most-actionable first.
 
     Returns (queue_groups, noise_groups, pipeline) where:
-      - queue_groups: [(label, members)] shown by default — Saved, then New to
-        triage, then the Backlog. These are the "still needs a decision" jobs.
+      - queue_groups: [(label, members)] shown by default — Saved, then Top
+        prospects (score at/above `min_score`, best first). Everything else
+        that's still live is deliberately NOT in the queue: the cockpit is a
+        short list of strong candidates, not a triage inbox.
       - noise_groups: [(label, members)] rendered but hidden until "Show
-        everything" — screened out, duplicates, dismissed, likely-closed.
+        everything" — below the bar, screened out, duplicates, dismissed,
+        likely-closed.
       - pipeline: jobs already in an application stage. NOT rendered in the
         list at all (the pipeline board owns them); returned only so the caller
         can show a count + link.
 
-    `new_since` is the "you last looked at the cockpit around here" cutoff: a
-    job first seen after it lands in "New to triage" instead of the backlog.
-    When None (no cutoff known), nothing counts as new and those jobs fall to
-    the backlog — the queue is unaffected, just unsplit.
-
     Buckets are checked in priority order so each job lands in one place and
     the groups stay mutually exclusive and exhaustive. A saved job outranks
     every noise bucket — a job you explicitly flagged is never hidden."""
-    saved, new, backlog = [], [], []
+    saved, top, below = [], [], []
     screened, dupes, dismissed_, dead_, stale_ = [], [], [], [], []
     pipeline = []
     for j in jobs:
@@ -838,23 +836,16 @@ def inbox_partition(jobs: list, stale_days: int = STALE_AFTER_DAYS, *,
             dead_.append(j)
         elif is_stale(j, stale_days):
             stale_.append(j)
-        elif _first_seen_after(j, new_since):
-            new.append(j)
+        elif j.score >= min_score:
+            top.append(j)
         else:
-            backlog.append(j)
-    # New to triage is a decision queue, not a leaderboard: sort it oldest-
-    # arrival-first (rather than inheriting the score-desc order everything
-    # else uses) so a job that's been sitting there stays at the top across
-    # visits instead of getting bumped down every time a higher-scoring job
-    # arrives. Without this, the group you were mid-triage-ing reshuffles out
-    # from under you as new postings come in.
-    new.sort(key=lambda j: j.first_seen_at)
+            below.append(j)
     queue_groups = [g for g in (
         ("★ Saved", saved),
-        ("New to triage", new),
-        ("Backlog", backlog),
+        ("Top prospects", top),
     ) if g[1]]
     noise_groups = [g for g in (
+        ("Below the bar", below),
         ("Screened out", screened),
         ("Duplicates", dupes),
         ("Dismissed", dismissed_),
@@ -870,8 +861,8 @@ def inbox_partition(jobs: list, stale_days: int = STALE_AFTER_DAYS, *,
 # label already carries a ★, which _grp_header colors directly instead of
 # also showing a redundant square next to it.
 _INBOX_GROUP_COLOR = {
-    "New to triage": _QUAL_COLOR["qualified"],
-    "Backlog": MUTED,
+    "Top prospects": _QUAL_COLOR["qualified"],
+    "Below the bar": MUTED,
     "Screened out": _STAGE_COLOR["denied"],
     "Duplicates": MUTED,
     "Dismissed": MUTED,
@@ -904,12 +895,12 @@ def _grp_header(label: str, count: int, *, noise: bool) -> str:
 
 # Groups big enough to matter get capped at INBOX_PAGE_SIZE with a server-side
 # "Load more" button (see serve.py's /cards/more) instead of rendering — and
-# shipping to the browser — every job up front. Saved/New/pipeline stay
+# shipping to the browser — every job up front. Saved/Top prospects/pipeline stay
 # unpaginated: they're small by construction (things you've flagged or that
-# just arrived), so pagination there would just be friction.
+# clear the bar), so pagination there would just be friction.
 INBOX_PAGE_SIZE = 60
 _PAGINATED_GROUP_SLUGS = {
-    "Backlog": "backlog",
+    "Below the bar": "below",
     "Screened out": "screened",
     "Duplicates": "duplicates",
     "Dismissed": "dismissed",
@@ -961,7 +952,7 @@ def inbox_cards_html(queue_groups, noise_groups, card_fn, *, qs: str = "") -> st
 def inbox_controls(jobs: list, *, new_count: int, queue_count: int,
                    pipeline_count: int, board_href: str = "/board",
                    filters: dict | None = None) -> str:
-    """The status line ('X new · Y awaiting decision · Z in your pipeline →')
+    """The status line ('X new · Y top prospects · Z in your pipeline →')
     plus a lean filter bar: search, a 'Fit' allow-list of qualification chips,
     a source dropdown, and a single 'Show everything' escape hatch that reveals
     the noise sections. Deliberately fewer knobs than the report's filter bar —
@@ -1004,7 +995,7 @@ def inbox_controls(jobs: list, *, new_count: int, queue_count: int,
     status = (
         f'<div style="font-size:14px;color:{INK};margin-bottom:10px;'
         f'font-family:{FONT_SANS};">'
-        f'<b>{new_count}</b> new · <b id="queue-count">{queue_count}</b> awaiting decision · '
+        f'<b>{new_count}</b> new · <b id="queue-count">{queue_count}</b> top prospects · '
         f'<a href="{board_href}" style="color:{BLUEPRINT_BRIGHT};text-decoration:none;">'
         f'{pipeline_count} in your pipeline &rarr;</a></div>'
     )
@@ -1033,10 +1024,10 @@ def inbox_controls(jobs: list, *, new_count: int, queue_count: int,
 
 
 INBOX_SCRIPT = """<script>
-// Collapsed-group state persists in localStorage (per label, e.g. "Backlog"),
+// Collapsed-group state persists in localStorage (per label, e.g. "Below the bar"),
 // not on the server — so it survives filter reloads (which re-fetch #cards
 // from scratch) without a round trip, but is otherwise this-browser-only.
-// "New to triage" is deliberately never auto-restored collapsed: it's the
+// "Top prospects" is deliberately never auto-restored collapsed: it's the
 // one group that's supposed to greet you open every visit.
 var COLLAPSE_KEY = 'cockpit_collapsed_groups';
 function _collapsedSet(){
@@ -1064,7 +1055,7 @@ function toggleGrp(h3){
 function applyCollapsedGroups(){
   var set = _collapsedSet();
   document.querySelectorAll('#cards .grp').forEach(function(h3){
-    if (h3.dataset.label !== 'New to triage' && set.has(h3.dataset.label)) {
+    if (h3.dataset.label !== 'Top prospects' && set.has(h3.dataset.label)) {
       _setGrpCollapsed(h3, true);
     }
   });

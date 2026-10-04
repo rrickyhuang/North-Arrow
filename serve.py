@@ -406,7 +406,7 @@ _SEEN_COOKIE = "cockpit_seen"
 
 
 def _new_since_marker() -> tuple[datetime, str]:
-    """Decide the 'new to triage' cutoff for this cockpit load and the cookie
+    """Decide the 'new since you last looked' cutoff for this cockpit load and the cookie
     value to persist it. Returns (new_since, cookie_value).
 
     The cookie carries two ISO timestamps joined by '|': the last load
@@ -472,7 +472,12 @@ def _filters_qs(filters: dict) -> str:
     return urlencode(parts)
 
 
-def _filtered_groups(jobs: list, filters: dict, new_since):
+def _bar() -> float:
+    """The "strong candidate" cutoff — same one the weekly digest uses."""
+    return config.load_config()["delivery"]["min_score_for_digest"]
+
+
+def _filtered_groups(jobs: list, filters: dict):
     """(queue_groups, noise_groups, pipeline) for the given filters. Noise
     groups come back empty unless show_all is set — no point computing HTML
     for jobs the view won't render at all."""
@@ -480,7 +485,7 @@ def _filtered_groups(jobs: list, filters: dict, new_since):
         j, q=filters["q"], source=filters["source"], quals=filters["quals"],
         has_letter=filters["has_letter"])]
     queue_groups, noise_groups, pipeline = html_render.inbox_partition(
-        filtered, _stale_days(), new_since=new_since)
+        filtered, _stale_days(), min_score=_bar())
     if not filters["show_all"]:
         noise_groups = []
     return queue_groups, noise_groups, pipeline
@@ -666,23 +671,24 @@ def create_app(db_path=db.DB_PATH) -> Flask:
                         order_by="score DESC")
         row_of = {j.id: i for i, j in enumerate(jobs, 1)}
         card_fn = lambda j: _card(j, row_of[j.id])
-        # The inbox is a decision queue: it leads with what still needs a
-        # call, hides handled/screened-out jobs behind "Show everything", and
-        # leaves in-progress applications to the board. "New to triage" =
-        # arrived since you last sat down (see marker below).
+        # The inbox is a short list of strong candidates: Saved + Top
+        # prospects up front, everything else behind "Show everything", and
+        # in-progress applications on the board. "new" = arrived since
+        # you last sat down (see marker below).
         new_since, seen_cookie = _new_since_marker()
         # Header counts are global/unfiltered — a stable orientation figure,
         # not scoped to whatever search happens to be active in #cards.
         all_queue_groups, _all_noise, all_pipeline = html_render.inbox_partition(
-            jobs, _stale_days(), new_since=new_since)
-        new_count = sum(len(m) for label, m in all_queue_groups if label == "New to triage")
+            jobs, _stale_days(), min_score=_bar())
+        new_count = sum(1 for label, m in all_queue_groups if label == "Top prospects"
+                        for j in m if html_render._first_seen_after(j, new_since))
         queue_count = sum(len(m) for _label, m in all_queue_groups)
         pipeline_count = sum(1 for j in all_pipeline if j.stage in html_render.ACTIVE_STAGES)
         # A bookmarked/shared/reloaded filtered URL (see INBOX_SCRIPT's
         # history.replaceState) should render already-filtered on first paint,
         # not flash unfiltered then snap to filtered.
         filters = _parse_filters()
-        queue_groups, noise_groups, _pipeline = _filtered_groups(jobs, filters, new_since)
+        queue_groups, noise_groups, _pipeline = _filtered_groups(jobs, filters)
         controls = html_render.inbox_controls(
             jobs, new_count=new_count, queue_count=queue_count,
             pipeline_count=pipeline_count, filters=filters)
@@ -692,7 +698,7 @@ def create_app(db_path=db.DB_PATH) -> Flask:
                 + f'<div id="cards">{cards}</div>'
                 + html_render.INBOX_SCRIPT)
         conn.close()
-        intro = "Your triage queue — act on a card and it drops out of the list."
+        intro = "Your top prospects — only postings that clear the bar are listed."
         resp = make_response(
             html_render.page("North Arrow — Cockpit", intro, body, head_extra=_HEAD + csrf_head))
         resp.set_cookie(_SEEN_COOKIE, seen_cookie, max_age=60 * 60 * 24 * 365,
@@ -708,9 +714,8 @@ def create_app(db_path=db.DB_PATH) -> Flask:
                         order_by="score DESC")
         row_of = {j.id: i for i, j in enumerate(jobs, 1)}
         card_fn = lambda j: _card(j, row_of[j.id])
-        new_since, _cookie = _new_since_marker()
         filters = _parse_filters()
-        queue_groups, noise_groups, _pipeline = _filtered_groups(jobs, filters, new_since)
+        queue_groups, noise_groups, _pipeline = _filtered_groups(jobs, filters)
         html = html_render.inbox_cards_html(
             queue_groups, noise_groups, card_fn, qs=_filters_qs(filters))
         conn.close()
@@ -732,9 +737,8 @@ def create_app(db_path=db.DB_PATH) -> Flask:
         jobs = db.query(conn, include_dismissed=True, include_duplicates=True,
                         order_by="score DESC")
         row_of = {j.id: i for i, j in enumerate(jobs, 1)}
-        new_since, _cookie = _new_since_marker()
         filters = _parse_filters()
-        queue_groups, noise_groups, _pipeline = _filtered_groups(jobs, filters, new_since)
+        queue_groups, noise_groups, _pipeline = _filtered_groups(jobs, filters)
         members = dict(queue_groups + noise_groups).get(label, [])
         conn.close()
         page = members[offset:offset + html_render.INBOX_PAGE_SIZE]

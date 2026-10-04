@@ -6,7 +6,7 @@ job can still surface if it's a strong match despite one bad signal. The one
 remaining hard kill is genuinely out-of-metro, on-site postings (a different
 city/province entirely, not commutable) — see disqualifiers.kill_if_outside_metro_and_onsite.
 Tuned to Ricky's criteria: commute and genuine design-role fit lead; org type
-carries NO penalty; the salary floor is soft.
+carries NO penalty; the salary floor is a hard screen (stated pay only).
 
 The commute component is computed upstream (commute.py) and stashed in
 ``job.score_breakdown['commute']`` by the scrape pipeline; the scorer reads it
@@ -42,6 +42,15 @@ def score_job(job: Job, cfg: dict) -> tuple[float, dict, str | None]:
     if dq.get("kill_if_outside_metro_and_onsite") and job.location_normalized == "Other":
         return 0.0, {"disqualified": "outside Vancouver metro, on-site"}, "out_of_metro"
 
+    # Minimum salary: a posting whose stated pay tops out below the floor isn't
+    # worth surfacing. Hourly rates are already annualized (parsers/salary_cad.py),
+    # so the floor is an annual figure. Unknown salary is NOT screened — most
+    # postings don't state one. Screened-out jobs stay recoverable in the cockpit.
+    floor = sc["preferences"]["salary_floor"]
+    top_pay = job.salary_max or job.salary_min
+    if top_pay and top_pay < floor:
+        return 0.0, {"disqualified": f"stated pay below ${floor:,} floor"}, "below_salary_floor"
+
     breakdown: dict = {}
 
     # ── COMMUTE (precomputed upstream) ──────────────────────────────────────
@@ -67,17 +76,14 @@ def score_job(job: Job, cfg: dict) -> tuple[float, dict, str | None]:
     else:
         breakdown["mixed_role"] = _tri(job.has_mixed_role)
 
-    # ── SALARY (soft floor) ─────────────────────────────────────────────────
-    floor, target = prefs["salary_floor"], prefs["salary_target"]
+    # ── SALARY (floor already enforced above; this scores position vs target) ─
+    target = prefs["salary_target"]
     if job.salary_min:
         breakdown["salary"] = min(job.salary_min / target, 1.0)
     elif job.salary_max:
         breakdown["salary"] = min(job.salary_max / target, 1.0)
     else:
         breakdown["salary"] = 0.5   # unknown: don't penalize
-    # Soft penalty (not a kill) if the whole range sits below the floor.
-    if job.salary_max and job.salary_max < floor:
-        breakdown["salary"] = min(breakdown["salary"], 0.3)
 
     # ── ROLE QUALITY (variety / not admin / not drafting) ───────────────────
     quality_signals = [

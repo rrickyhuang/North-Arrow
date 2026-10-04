@@ -67,10 +67,23 @@ def test_qualification_reach_docks_score(cfg):
     assert breakdown["_qualification_penalty"] == cfg["scoring"]["penalties"]["qualification"]["reach"]
 
 
-def test_salary_below_floor_is_capped(cfg):
-    job = make_job(salary_min=None, salary_max=40000)  # below salary_floor (60000)
-    _score, breakdown, _disq = scorer.score_job(job, cfg)
-    assert breakdown["salary"] <= 0.3
+def test_salary_below_floor_is_screened_out(cfg):
+    job = make_job(salary_min=None, salary_max=60000)  # below salary_floor (68000)
+    score, _breakdown, disq = scorer.score_job(job, cfg)
+    assert score == 0.0
+    assert disq == "below_salary_floor"
+
+
+def test_salary_at_or_above_floor_passes(cfg):
+    job = make_job(salary_min=None, salary_max=68000)
+    _score, _breakdown, disq = scorer.score_job(job, cfg)
+    assert disq is None
+
+
+def test_range_straddling_floor_passes(cfg):
+    job = make_job(salary_min=60000, salary_max=80000)  # top of range clears the floor
+    _score, _breakdown, disq = scorer.score_job(job, cfg)
+    assert disq is None
 
 
 def test_unknown_salary_is_not_penalized(cfg):

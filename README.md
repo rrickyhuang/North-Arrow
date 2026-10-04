@@ -5,7 +5,7 @@ early-career designer's search but designed to be forked and pointed at your
 own. It scrapes design-field job sources, normalizes and scores each posting
 against personal criteria — including estimated SkyTrain commute and an LLM
 read of genuine design-role fit — dedupes cross-source repeats, and delivers a
-ranked daily shortlist as a markdown/HTML digest (email + file). A companion
+ranked weekly shortlist of top prospects as a markdown/HTML digest (email + file). A companion
 local web cockpit turns that shortlist into an actual application-tracking
 workspace.
 
@@ -105,7 +105,7 @@ expected keys).
 ## Usage
 
 ```bash
-python scrape.py --all --digest    # daily run: scrape all sources, score, email digest
+python scrape.py --all --digest    # weekly run: scrape all sources, score, email digest
 python scrape.py --source pibc     # one source
 python scrape.py --rescore         # re-rank stored jobs after a config change
 python scrape.py --reenrich        # force fresh Haiku enrichment on every stored job (backfill a new field)
@@ -166,7 +166,7 @@ coverage yet for the LLM-enrichment calls or the live scrapers themselves.
 - `company_research.py` — one-time web-research blurb on the hiring company, cached per job and fed into cover-letter drafts
 - `mark.py` — sets a job's application status/stage
 - `scrape.py` — CLI entry point and pipeline orchestration
-- `run_daily.bat` — Windows Task Scheduler entry point (`scrape.py --all --digest`, daily 9pm)
+- `run_daily.bat` — Windows Task Scheduler entry point (`scrape.py --all --digest`, weekly — Sunday 9pm)
 - `help.py` — prints a consolidated command reference from each script's docstring
 
 ## Decisions
@@ -178,9 +178,9 @@ coverage yet for the LLM-enrichment calls or the live scrapers themselves.
 - **Qualification is a separate, display-only axis** (seniority/credentials/verdict) — shown but never changes the fit score or ranking directly; it does apply a soft penalty (below) so reach-tier roles don't outrank applyable ones.
 - **Admin-heavy, `role_type=admin`, `role_type=drafting_only`, and non-full-time employment are all soft multiplier penalties**, not disqualifiers — a job classified this way can still surface if it's otherwise a strong match. **Out-of-metro, on-site is the one remaining hard disqualifier** (score forced to 0) since there's no "good fit despite it" case for a posting that isn't commutable at all.
 - **Metro detection covers the full Metro Vancouver Regional District**, not just the City of Vancouver (`parsers/normalize.py`'s `_METRO` list).
-- **Salary floor is soft** (docks score, never disqualifies).
+- **Salary floor is a hard screen on stated pay only** (`salary_floor`, annual CAD; hourly is annualized at 2080 h). A posting whose top stated pay is below it is disqualified (`below_salary_floor`, lands in the cockpit's hidden "Screened out"); postings with no stated salary pass.
 - **Cross-source duplicates are hidden, not deleted** — `dedup.py` marks all but one "keeper" per fuzzy-matched group `duplicate_of`, same hide-by-default treatment as `dismissed`. `dedup.source_priority` in config ranks direct/authoritative boards above aggregators.
-- **The digest always shows current best matches, not a diff.** Every run re-lists all jobs at/above `min_score_for_digest`, ranked highest-first. `is_new` is a highlight only, clearing once an email actually sends.
+- **The digest is a short list of strong candidates, not a triage queue.** Every run re-lists the top `max_jobs_in_digest` jobs at/above `min_score_for_digest`, ranked highest-first; no near-misses unless `show_near_misses` is on, and no email at all when nothing clears the bar. The cockpit uses the same bar: "Top prospects" is the default view, everything below it sits in the hidden "Below the bar" group. `is_new` is a highlight only, clearing once an email actually sends.
 - **The digest is application-aware.** Jobs in an active pipeline stage (`applied`/`interviewing`/`offer`) are pulled into a compact tracker instead of the suggestion groups; closed stages (`denied`/`withdrawn`) drop out entirely.
 - **Cover letters deliberately don't use the Anthropic API.** `coverletter.py` shells out to the `claude` CLI (Claude Code subscription, not metered tokens) since it's low-frequency and human-triggered, unlike the high-volume unattended Haiku enrichment calls.
 - **`show.py` stays strictly read-only** — all status changes go through `mark.py` or the cockpit explicitly.

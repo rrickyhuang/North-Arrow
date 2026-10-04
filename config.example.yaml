@@ -66,7 +66,7 @@ scoring:
     salary:           0.12
     role_quality:     0.08
   preferences:
-    salary_floor:     60000   # soft penalty below this, not a hard disqualifier
+    salary_floor:     68000   # CAD/yr — stated pay below this is screened out; unknown salary passes
     salary_target:    85000   # at/above this gets full salary score
     remote_ok:        true
     hybrid_ok:        true
@@ -167,7 +167,7 @@ dedup:
 # See scrapers/_jobspy_common.py.
 jobspy:
   results_wanted: 30
-  hours_old: 168   # 7 days
+  hours_old: 192   # 8 days — overlaps a weekly run
   # Keywords are batched into multiple OR-queries of this size so every
   # keyword in search_queries.keywords actually gets searched, not just the
   # first N. More batches = more requests per run.
@@ -208,8 +208,10 @@ delivery:
   write_markdown: true
   digest_dir: "digests"
   send_email: true
-  min_score_for_digest: 0.45
-  max_jobs_in_digest: 25
+  # The "bar" for both the weekly digest and the cockpit's Top prospects list.
+  min_score_for_digest: 0.70
+  max_jobs_in_digest: 8
+  show_near_misses: false
   # A posting not seen on its source for this many days is flagged "stale" in the
   # report and web cockpit (hidden by default, toggleable). Jobs you're tracking
   # (a pipeline stage or marked interested) are never stale.
